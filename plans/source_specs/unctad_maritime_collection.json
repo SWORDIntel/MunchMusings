@@ -1,0 +1,36 @@
+{
+  "source_id": "seed-29",
+  "source_name": "UNCTAD Maritime Transport Insights",
+  "collection_role": "market_monitor",
+  "collection_mode": "automatable",
+  "adapter_type": "html_snapshot",
+  "request_method": "GET",
+  "request_params": {
+    "url": "https://unctadstat.unctad.org/insights/theme/246",
+    "capture_limit": 1
+  },
+  "extraction_targets": [
+    "latest maritime insight title",
+    "freight rate indices",
+    "Suez Canal transit statistics",
+    "logistics cost trends"
+  ],
+  "normalization_expectations": {
+    "primary_record_family": "source_pull",
+    "secondary_record_family": "market_baseline",
+    "required_fields": [
+      "source_id",
+      "captured_utc",
+      "published_date",
+      "freight_index_value",
+      "transit_change_pct"
+    ],
+    "observation_summary": "UNCTAD maritime data provides the macro 'logistics tax' context for regional price anomalies."
+  },
+  "raw_path_template": "artifacts/collection/raw/seed-29/unctad_maritime_snapshot.html",
+  "normalized_path_template": "artifacts/collection/normalized/seed-29.json",
+  "quality_checks": [
+    "Ensure the insight covers the Red Sea/Suez corridor specifically.",
+    "Verify the date of the latest freight index update."
+  ]
+}

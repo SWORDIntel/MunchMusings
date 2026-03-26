@@ -1,0 +1,60 @@
+{
+  "source_id": "seed-12",
+  "source_name": "OpenStreetMap Overpass",
+  "collection_role": "market_proxy",
+  "collection_mode": "automatable",
+  "adapter_type": "overpass_query",
+  "request_method": "POST",
+  "request_params": {
+    "query_seed_file": "artifacts/collection/overpass-query-seeds.csv",
+    "scope": "Cairo/Giza pilot",
+    "districts": [
+      "Nasr City",
+      "6th of October City",
+      "Ain Shams / Matariya cluster",
+      "Giza / Faisal corridor",
+      "Imbaba",
+      "Shubra El Kheima"
+    ],
+    "tags": [
+      "shop=bakery",
+      "shop=convenience",
+      "shop=supermarket",
+      "amenity=cafe",
+      "shop=confectionery"
+    ],
+    "capture_limit": 200
+  },
+  "extraction_targets": [
+    "osm_id",
+    "name",
+    "tags",
+    "geometry",
+    "timestamp",
+    "district mapping",
+    "shop/category signal"
+  ],
+  "normalization_expectations": {
+    "primary_record_family": "source_observation",
+    "secondary_record_family": "place_snapshot",
+    "required_fields": [
+      "observation_id",
+      "source_id",
+      "zone_name",
+      "district_or_neighborhood",
+      "observation_type",
+      "capture_utc",
+      "normalized_summary",
+      "confidence",
+      "evidence_path"
+    ],
+    "observation_summary": "Normalize Overpass results into bounded POI snapshots keyed to district and tag."
+  },
+  "raw_path_template": "artifacts/collection/raw/seed-12/overpass/<run_id>.json",
+  "normalized_path_template": "artifacts/collection/normalized/seed-12.json",
+  "quality_checks": [
+    "Preserve the raw Overpass JSON response.",
+    "Keep query text alongside the returned POIs.",
+    "Separate geometry from analyst summary."
+  ]
+}

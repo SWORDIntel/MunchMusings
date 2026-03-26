@@ -1,0 +1,1 @@
+observation_id,pack_id,zone_name,country,source_id,source_name,source_family,district_or_neighborhood,observation_type,capture_method,capture_utc,published_date,latest_period_covered,source_url,source_excerpt,normalized_summary,geo_lat,geo_lon,confidence,confidence_reason,operator,status,raw_artifact_path,normalized_artifact_path,notes

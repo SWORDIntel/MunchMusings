@@ -1,0 +1,3 @@
+observation_id,source_id,zone_name,district_or_neighborhood,observation_type,capture_utc,signal_direction,normalized_summary,confidence,evidence_path
+obs-001,seed-01,Cairo/Giza pilot,Giza / Faisal corridor,source_health,2026-03-25T08:29:05Z,neutral,UNHCR Egypt data portal remains a verified baseline source but is overdue on freshness.,high,artifacts/briefings/cairo-giza-pilot-2026-03-25/source_observation_log.csv
+obs-002,seed-11,Cairo/Giza pilot,Nasr City,place_density,2026-03-25T08:29:05Z,upward,Collection pack is ready to receive place-density captures for the Egypt pilot.,medium,artifacts/collection/normalized/seed-11.json

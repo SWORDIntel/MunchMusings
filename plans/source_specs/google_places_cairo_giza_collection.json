@@ -1,0 +1,71 @@
+{
+  "source_id": "seed-11",
+  "source_name": "Google Places API",
+  "collection_role": "market_proxy",
+  "collection_mode": "automatable",
+  "adapter_type": "places_api_search",
+  "request_method": "POST",
+  "request_params": {
+    "query_seed_file": "artifacts/collection/places-query-seeds.csv",
+    "scope": "Cairo/Giza pilot",
+    "districts": [
+      "Nasr City",
+      "6th of October City",
+      "Ain Shams / Matariya cluster",
+      "Giza / Faisal corridor",
+      "Imbaba",
+      "Shubra El Kheima"
+    ],
+    "place_types": [
+      "bakery",
+      "grocery_or_supermarket",
+      "cafe",
+      "dessert_or_sweets"
+    ],
+    "fields": [
+      "place_id",
+      "name",
+      "formatted_address",
+      "location",
+      "types",
+      "rating",
+      "user_ratings_total",
+      "business_status",
+      "website"
+    ],
+    "capture_limit": 50
+  },
+  "extraction_targets": [
+    "place_id",
+    "name",
+    "address",
+    "coordinates",
+    "place types",
+    "business status",
+    "website",
+    "category keywords"
+  ],
+  "normalization_expectations": {
+    "primary_record_family": "source_observation",
+    "secondary_record_family": "place_snapshot",
+    "required_fields": [
+      "observation_id",
+      "source_id",
+      "zone_name",
+      "district_or_neighborhood",
+      "observation_type",
+      "capture_utc",
+      "normalized_summary",
+      "confidence",
+      "evidence_path"
+    ],
+    "observation_summary": "Normalize place results into district-scoped snapshots with stable identifiers and capture timestamps."
+  },
+  "raw_path_template": "artifacts/collection/raw/seed-11/google_places/<run_id>.json",
+  "normalized_path_template": "artifacts/collection/normalized/seed-11.json",
+  "quality_checks": [
+    "Limit fields to the minimum useful set.",
+    "Keep raw query responses separate from normalized rows.",
+    "Retain district scope on every result."
+  ]
+}

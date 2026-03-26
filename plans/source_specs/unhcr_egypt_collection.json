@@ -1,0 +1,43 @@
+{
+  "source_id": "seed-01",
+  "source_name": "UNHCR Egypt data portal",
+  "collection_role": "baseline",
+  "collection_mode": "automatable",
+  "adapter_type": "html_snapshot",
+  "request_method": "GET",
+  "request_params": {
+    "url": "https://data.unhcr.org/en/country/egy",
+    "follow_links": true,
+    "capture_limit": 1,
+    "preserve_query_string": true
+  },
+  "extraction_targets": [
+    "latest refugee and asylum-seeker counts",
+    "country-of-origin breakdown",
+    "publication date",
+    "factsheet or dashboard title",
+    "document links for the current reporting window"
+  ],
+  "normalization_expectations": {
+    "primary_record_family": "source_pull",
+    "secondary_record_family": "event_baseline",
+    "required_fields": [
+      "source_id",
+      "captured_utc",
+      "published_date",
+      "latest_period_covered",
+      "source_url",
+      "raw_path",
+      "checksum_sha256",
+      "capture_status"
+    ],
+    "observation_summary": "Convert the latest UNHCR Egypt publication into a baseline evidence row for the Cairo/Giza briefing pack."
+  },
+  "raw_path_template": "artifacts/collection/raw/seed-01/unhcr_egypt_snapshot.html",
+  "normalized_path_template": "artifacts/collection/normalized/seed-01.json",
+  "quality_checks": [
+    "Confirm the latest publication date is present.",
+    "Confirm the source URL resolves without auth.",
+    "Preserve the raw HTML snapshot unchanged."
+  ]
+}

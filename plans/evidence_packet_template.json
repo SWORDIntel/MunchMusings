@@ -1,0 +1,18 @@
+{
+  "packet_id": "",
+  "claim_scope": "district_level",
+  "country": "",
+  "district": "",
+  "source_id": "",
+  "source_name": "",
+  "source_url": "",
+  "source_accessed_utc": "",
+  "last_published_date": "",
+  "latest_period_covered": "",
+  "claim_label": "Unconfirmed",
+  "claim_summary": "",
+  "evidence_excerpt": "",
+  "confounds": [],
+  "reviewer": "",
+  "review_status": "pending_review"
+}

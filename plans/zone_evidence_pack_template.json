@@ -1,0 +1,50 @@
+{
+  "pack_id": "",
+  "generated_utc": "",
+  "zone_name": "",
+  "country": "",
+  "review_window_start": "",
+  "review_window_end": "",
+  "zone_hypothesis": "",
+  "analyst": "",
+  "reviewer": "",
+  "assessment_label": "Unconfirmed",
+  "briefing_sections": [
+    "executive_summary",
+    "key_judgments",
+    "zone_scope",
+    "source_health",
+    "baseline_events",
+    "observations",
+    "anomaly_cards",
+    "claim_register",
+    "confounds_and_limits",
+    "analyst_assessment",
+    "review_decision"
+  ],
+  "source_health": {
+    "current": 0,
+    "due_now": 0,
+    "overdue": 0,
+    "blocked": 0,
+    "unknown": 0
+  },
+  "baseline_events": [],
+  "observations": [],
+  "anomaly_cards": [],
+  "claim_register": [],
+  "confounds": [],
+  "appendix": {
+    "source_ids": [],
+    "notes": []
+  },
+  "review_decision": {
+    "label": "Unconfirmed",
+    "approved_for_briefing": false,
+    "reviewer": "",
+    "decision_utc": "",
+    "publication_label": "",
+    "decision_notes": "",
+    "notes": ""
+  }
+}

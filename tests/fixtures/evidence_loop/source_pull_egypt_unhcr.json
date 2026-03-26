@@ -1,0 +1,11 @@
+{
+  "source_id": "seed-01",
+  "source_name": "UNHCR Egypt data portal",
+  "captured_utc": "2026-03-25T08:29:05Z",
+  "published_date": "2026-03-05",
+  "latest_period_covered": "2026-02-28",
+  "source_url": "https://data.unhcr.org/en/country/egy",
+  "raw_path": "artifacts/collection/raw/seed-01/run-seed-01.html",
+  "checksum_sha256": "fixture-checksum-001",
+  "capture_status": "completed"
+}

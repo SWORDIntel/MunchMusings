@@ -1,0 +1,2 @@
+claim_id,pack_id,zone_name,claim_text,claim_type,basis_type,evidence_links,decision_label,publication_label
+claim-001,cairo-giza-pilot-2026-03-25,Cairo/Giza pilot,Cairo/Giza remains a valid collection zone but is not yet briefing-grade for a directional claim.,zone_readiness,source_health_and_baseline,https://data.unhcr.org/en/documents/details/121421;https://dtm.iom.int/sites/g/files/tmzbdl1461/files/reports/DTM%20Sudan%20Mobility%20Update%20%2804%29.pdf,defer,Unconfirmed

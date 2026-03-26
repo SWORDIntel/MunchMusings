@@ -1,0 +1,4 @@
+Region,Anomaly_Type,Impact_Score,Maritime_Correlation,Migration_Indicator_Food,Associated_Group,Notes
+Cairo/Giza,Market Demand Shift,0.85,Suez transit stability vs local scarcity,Sudanese broad beans (spike),Sudanese (Faisal/Giza & Ain Shams),"Correlated with 1.1M Sudanese arrivals reported by UNHCR (March 2026); signal for established diaspora nodes in Faisal/Giza corridor."
+Israel,Maritime Logistical Stress,0.60,Ashdod/Haifa throughput volatility,N/A,Logistics/Trade Focus,"Ashdod Port financials (Q3 2025) and Comtrade trends show route-stress resilience; rising logistical costs affecting staple import parity."
+Lebanon/Giza Cluster,Staple Price Volatility,0.75,Eastern Med route stress,Lebanese spices (Giza spillover),Levantine/Lebanese (Giza secondary),"Lebanon Food CPI rose (Nov 2025); spice demand spikes in Giza suggest secondary migration flows or trans-regional cultural market nodes."

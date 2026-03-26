@@ -1,0 +1,38 @@
+{
+  "source_id": "seed-32",
+  "source_name": "Israel CBS Exports and Imports Monthly Files",
+  "collection_role": "trade",
+  "collection_mode": "automatable",
+  "adapter_type": "api_pull",
+  "request_method": "GET",
+  "request_params": {
+    "url": "https://www.cbs.gov.il/he/publications/_api/web/GetFolderByServerRelativeUrl('DocLib/impexpfiles')/Files",
+    "headers": {
+      "Accept": "application/json;odata=verbose"
+    }
+  },
+  "extraction_targets": [
+    "latest zip file names",
+    "file timestamps",
+    "covered period from file naming (e.g., exp_1_2026.zip)"
+  ],
+  "normalization_expectations": {
+    "primary_record_family": "source_pull",
+    "secondary_record_family": "trade_baseline",
+    "required_fields": [
+      "source_id",
+      "captured_utc",
+      "published_date",
+      "latest_period_covered",
+      "file_name",
+      "source_url"
+    ],
+    "observation_summary": "Israel CBS trade files provide the most granular commodity-level baseline for import/export stress analysis."
+  },
+  "raw_path_template": "artifacts/collection/raw/seed-32/cbs_trade_files_list.json",
+  "normalized_path_template": "artifacts/collection/normalized/seed-32.json",
+  "quality_checks": [
+    "Verify both import and export ZIPs are present for the period.",
+    "Check for any 'Gizli Ulke' or hidden categories in accompanying metadata if available."
+  ]
+}

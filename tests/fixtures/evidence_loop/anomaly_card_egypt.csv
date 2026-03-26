@@ -1,0 +1,2 @@
+anomaly_id,pack_id,zone_name,district,signal_type,nearest_baseline_event,score,publication_label,confound_notes
+anomaly-starter-001,cairo-giza-pilot-2026-03-25,Cairo/Giza pilot,Giza / Faisal corridor,collection_readiness,egypt-sudan-arrivals-2023-04-15,n/a,Unconfirmed,No normalized market-proxy capture has been recorded yet.

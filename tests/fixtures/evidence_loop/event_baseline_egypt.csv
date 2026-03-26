@@ -1,0 +1,2 @@
+event_id,event_date,event_type,zone_name,country,geography,source_ref,brief_use
+egypt-sudan-arrivals-2023-04-15,2023-04-15,arrival,Cairo/Giza pilot,Egypt,Cairo/Giza,UNHCR Egypt data portal; IOM DTM Sudan,Anchor event for Egypt baseline timing checks.

@@ -1,0 +1,1 @@
+claim_id,pack_id,zone_name,country,claim_text,claim_type,basis_type,source_ids,observation_ids,evidence_links,nearest_baseline_event,baseline_event_date,confound_ids,confidence_label,confidence_score,review_state,reviewer,decision_utc,decision_label,publication_label,notes

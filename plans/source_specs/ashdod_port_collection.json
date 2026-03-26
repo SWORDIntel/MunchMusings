@@ -1,0 +1,40 @@
+{
+  "source_id": "seed-33",
+  "source_name": "Ashdod Port Financial and Operating Updates",
+  "collection_role": "market_monitor",
+  "collection_mode": "automatable",
+  "adapter_type": "html_snapshot",
+  "request_method": "GET",
+  "request_params": {
+    "url": "https://www.ashdodport.co.il/about/financial-information/Pages/default.aspx",
+    "capture_limit": 1,
+    "preserve_query_string": true
+  },
+  "extraction_targets": [
+    "latest financial report title",
+    "revenue and profit figures",
+    "container throughput (TEU)",
+    "vehicle and bulk cargo stats",
+    "investment and upgrade announcements"
+  ],
+  "normalization_expectations": {
+    "primary_record_family": "source_pull",
+    "secondary_record_family": "market_baseline",
+    "required_fields": [
+      "source_id",
+      "captured_utc",
+      "published_date",
+      "latest_period_covered",
+      "throughput_teu",
+      "revenue_nis",
+      "source_url"
+    ],
+    "observation_summary": "Ashdod Port throughput serves as a primary maritime proxy for Israel's supply chain resilience."
+  },
+  "raw_path_template": "artifacts/collection/raw/seed-33/ashdod_port_snapshot.html",
+  "normalized_path_template": "artifacts/collection/normalized/seed-33.json",
+  "quality_checks": [
+    "Verify throughput data matches the reported quarter.",
+    "Cross-reference with Port2Port or other maritime news aggregators."
+  ]
+}

@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+artifacts/bootstrap/
+artifacts/briefings/
+artifacts/collection/
+artifacts/operating-cycles/
+artifacts/reports/
+artifacts/v0_1/
