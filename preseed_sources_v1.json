@@ -1,0 +1,546 @@
+[
+  {
+    "rank": 1,
+    "source_name": "UNHCR Egypt data portal",
+    "source_family": "humanitarian",
+    "priority_tier": "tier1",
+    "region_or_country": "Egypt",
+    "access_type": "html/json",
+    "refresh_cadence": "weekly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Registered refugee baseline, Sudan arrivals, and Egypt backtest anchoring.",
+    "notes": "Primary hard-baseline source for Egypt pilot and district prioritization.",
+    "url": "https://data.unhcr.org/en/country/egy"
+  },
+  {
+    "rank": 2,
+    "source_name": "IOM DTM Sudan",
+    "source_family": "humanitarian",
+    "priority_tier": "tier1",
+    "region_or_country": "Sudan/Regional",
+    "access_type": "html/pdf",
+    "refresh_cadence": "weekly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Displacement tracking and spillover context for Egypt and regional movement analysis.",
+    "notes": "Use alongside UNHCR for event windows and cross-border movement context.",
+    "url": "https://dtm.iom.int/sudan"
+  },
+  {
+    "rank": 3,
+    "source_name": "UNHCR Lebanon reporting hub",
+    "source_family": "humanitarian",
+    "priority_tier": "tier1",
+    "region_or_country": "Lebanon",
+    "access_type": "html/pdf",
+    "refresh_cadence": "weekly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Flash updates and return/movement reporting for the Lebanon/Syria corridor.",
+    "notes": "Primary hard-baseline source for Lebanon movement overlays.",
+    "url": "https://data.unhcr.org/en/country/lbn"
+  },
+  {
+    "rank": 4,
+    "source_name": "ACAPS Lebanon",
+    "source_family": "humanitarian",
+    "priority_tier": "tier1",
+    "region_or_country": "Lebanon",
+    "access_type": "html",
+    "refresh_cadence": "weekly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Conflict, displacement, and humanitarian context for interpreting Lebanon anomalies.",
+    "notes": "Narrative baseline that complements UNHCR flash updates.",
+    "url": "https://www.acaps.org/en/countries/lebanon"
+  },
+  {
+    "rank": 5,
+    "source_name": "OCHA OPT Gaza updates",
+    "source_family": "humanitarian",
+    "priority_tier": "tier1",
+    "region_or_country": "Gaza/OPT",
+    "access_type": "html",
+    "refresh_cadence": "biweekly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Market-collapse and humanitarian deterioration timeline for Gaza baseline analysis.",
+    "notes": "Treat Gaza as market-functionality collapse, not preference analysis.",
+    "url": "https://www.ochaopt.org/content/gaza-humanitarian-response-update-30-march-12-april-2025"
+  },
+  {
+    "rank": 6,
+    "source_name": "IPC Gaza snapshot",
+    "source_family": "humanitarian",
+    "priority_tier": "tier1",
+    "region_or_country": "Gaza/OPT",
+    "access_type": "pdf",
+    "refresh_cadence": "periodic",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Food insecurity severity and projection windows for Gaza backtesting.",
+    "notes": "Pair with OCHA and any observable market proxy signals.",
+    "url": "https://www.ipcinfo.org/ipc-country-analysis/details-map/en/c/1159696/?iso3=PSE"
+  },
+  {
+    "rank": 7,
+    "source_name": "IPC Lebanon analysis",
+    "source_family": "humanitarian",
+    "priority_tier": "tier1",
+    "region_or_country": "Lebanon",
+    "access_type": "html",
+    "refresh_cadence": "periodic",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "District-level stress context for Lebanon food-market interpretation.",
+    "notes": "Useful as a confound control for broad market stress.",
+    "url": "https://www.ipcinfo.org/ipc-country-analysis/details-map/en/c/1159824/"
+  },
+  {
+    "rank": 8,
+    "source_name": "WFP Retail and Markets factsheet",
+    "source_family": "market",
+    "priority_tier": "tier1",
+    "region_or_country": "Lebanon",
+    "access_type": "pdf",
+    "refresh_cadence": "periodic",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Retail and market-functionality context for Lebanon and confound handling.",
+    "notes": "Support source, not standalone detection evidence.",
+    "url": "https://www.wfp.org/publications-WFP-Lebanon-Programme-Factsheets-2025"
+  },
+  {
+    "rank": 9,
+    "source_name": "UN Comtrade API portal",
+    "source_family": "trade",
+    "priority_tier": "tier1",
+    "region_or_country": "Global",
+    "access_type": "html/api",
+    "refresh_cadence": "monthly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Import/export trendlines for bakery inputs, sweets, nuts, dates, and savory snacks.",
+    "notes": "Best macro source for import-shift corroboration.",
+    "url": "https://comtradeplus.un.org/DataAvailability"
+  },
+  {
+    "rank": 10,
+    "source_name": "USDA FAS Saudi Retail Foods Annual",
+    "source_family": "market",
+    "priority_tier": "tier1",
+    "region_or_country": "Saudi Arabia",
+    "access_type": "html/pdf",
+    "refresh_cadence": "annual",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Saudi retail structure, chain mix, and snack-category growth context.",
+    "notes": "Anchor source for Saudi channel and assortment planning.",
+    "url": "https://apps.fas.usda.gov/newgainapi/api/Report/DownloadReportByFileName?fileName=Retail+Foods+Annual_Riyadh_Saudi+Arabia_SA2025-0015"
+  },
+  {
+    "rank": 11,
+    "source_name": "Google Places API",
+    "source_family": "place",
+    "priority_tier": "tier1",
+    "region_or_country": "Regional",
+    "access_type": "api",
+    "refresh_cadence": "weekly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Compliant place discovery and metadata retrieval for bakeries, groceries, caf\u00e9s, and sweets shops.",
+    "notes": "Core structured place source; enforce quotas and field restrictions.",
+    "url": "https://developers.google.com/maps/documentation/places/web-service"
+  },
+  {
+    "rank": 12,
+    "source_name": "OpenStreetMap Overpass",
+    "source_family": "place",
+    "priority_tier": "tier1",
+    "region_or_country": "Regional",
+    "access_type": "api",
+    "refresh_cadence": "weekly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "POI extraction for bakeries, groceries, caf\u00e9s, confectionery shops, and supermarkets.",
+    "notes": "Use to complement Google Places and fill in tagged local coverage.",
+    "url": "https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL"
+  },
+  {
+    "rank": 13,
+    "source_name": "Google Maps billing guidance",
+    "source_family": "place",
+    "priority_tier": "tier2",
+    "region_or_country": "Regional",
+    "access_type": "html",
+    "refresh_cadence": "as needed",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Quota, budget, and field-mask controls for compliant Google Places usage.",
+    "notes": "Operational safeguard to keep API use controlled and auditable.",
+    "url": "https://developers.google.com/maps/billing-and-pricing/manage-costs"
+  },
+  {
+    "rank": 14,
+    "source_name": "Agthia Abu Auf IR releases",
+    "source_family": "investor_relations",
+    "priority_tier": "tier2",
+    "region_or_country": "Egypt/UAE",
+    "access_type": "html/pdf",
+    "refresh_cadence": "quarterly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Premium-snack formalization and store-expansion proxy for Egypt.",
+    "notes": "Business proxy only; never direct demographic proof.",
+    "url": "https://www.agthia.com/news/agthia-group-consolidates-additional-10-stake-in-egyptian-healthy-snacks-and-coffee-company-abu-auf-group/"
+  },
+  {
+    "rank": 15,
+    "source_name": "WFP Lebanon food systems publication",
+    "source_family": "market",
+    "priority_tier": "tier2",
+    "region_or_country": "Lebanon",
+    "access_type": "html",
+    "refresh_cadence": "periodic",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Food-system resilience context and institutional market framing.",
+    "notes": "Useful for controls and policy framing, not direct event detection.",
+    "url": "https://www.wfp.org/publications/strengthening-government-institutions-inclusive-food-systems-transformation-lebanon"
+  },
+  {
+    "rank": 16,
+    "source_name": "UNSD API catalogue",
+    "source_family": "trade",
+    "priority_tier": "tier2",
+    "region_or_country": "Global",
+    "access_type": "html",
+    "refresh_cadence": "as needed",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Discovery path for official UN statistical APIs beyond the core Comtrade endpoint.",
+    "notes": "Reference source for future API expansion.",
+    "url": "https://unstats.un.org/unsd/api/"
+  },
+  {
+    "rank": 17,
+    "source_name": "Overpass Turbo",
+    "source_family": "place",
+    "priority_tier": "tier2",
+    "region_or_country": "Regional",
+    "access_type": "web",
+    "refresh_cadence": "as needed",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Analyst query prototyping and export for Overpass-based collection.",
+    "notes": "Use for analyst iteration before automating query packs.",
+    "url": "https://overpass-turbo.eu/"
+  },
+  {
+    "rank": 18,
+    "source_name": "Deliveroo UAE trend releases",
+    "source_family": "consumer_trends",
+    "priority_tier": "tier2",
+    "region_or_country": "UAE",
+    "access_type": "html",
+    "refresh_cadence": "occasional",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Directional trend signal for UAE premiumization and mainstreaming.",
+    "notes": "Soft evidence only; cap at supporting role in migration analysis.",
+    "url": "https://deliveroo.ae/more/news-articles/11-dishes-from-uae-restaurants-make-it-to-deliveroo-s-top-100-trending-dishes-of-2024"
+  },
+  {
+    "rank": 19,
+    "source_name": "Spinneys UAE trends",
+    "source_family": "consumer_trends",
+    "priority_tier": "tier2",
+    "region_or_country": "UAE",
+    "access_type": "html",
+    "refresh_cadence": "occasional",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Retail narrative context for premiumization, flavor drift, and merchandising changes.",
+    "notes": "Use only as weak corroboration, never as standalone proof.",
+    "url": "https://www.spinneys.com/en-ae/lifestyle/top-trends-2025/"
+  },
+  {
+    "rank": 20,
+    "source_name": "Google Trends",
+    "source_family": "trends",
+    "priority_tier": "tier2",
+    "region_or_country": "Regional",
+    "access_type": "web",
+    "refresh_cadence": "weekly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Relative interest shifts for food terms by geography and period.",
+    "notes": "Weak signal; use only with stronger place or baseline evidence.",
+    "url": "https://trends.google.com/explore"
+  },
+  {
+    "rank": 21,
+    "source_name": "FAO FPMA Food Price Monitoring and Analysis",
+    "source_family": "macro_price",
+    "priority_tier": "tier1",
+    "region_or_country": "Global",
+    "access_type": "html/api",
+    "refresh_cadence": "monthly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Official and semi-official food-price context for separating local assortment signals from broad inflation or commodity shocks.",
+    "notes": "High-value macro confound source for Egypt, Lebanon, Gaza/OPT, Saudi Arabia, and regional spillover monitoring.",
+    "url": "https://www.fao.org/giews/food-prices/en/"
+  },
+  {
+    "rank": 22,
+    "source_name": "Saudi GASTAT Consumer Price Index",
+    "source_family": "macro_price",
+    "priority_tier": "tier1",
+    "region_or_country": "Saudi Arabia",
+    "access_type": "html",
+    "refresh_cadence": "monthly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Official Saudi inflation baseline for controlling channel and assortment shifts against broader consumer-price movements.",
+    "notes": "Use as a hard macro confound source before elevating Saudi retail-proxy signals.",
+    "url": "https://stats.gov.sa/en/w/cpi-1"
+  },
+  {
+    "rank": 23,
+    "source_name": "Lebanon CAS Consumer Price Index",
+    "source_family": "macro_price",
+    "priority_tier": "tier1",
+    "region_or_country": "Lebanon",
+    "access_type": "html",
+    "refresh_cadence": "monthly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Official Lebanon CPI context for distinguishing market stress, inflation, and FX-driven effects from local anomaly candidates.",
+    "notes": "Primary official macro-price control for Lebanon analysis.",
+    "url": "https://www.beta.cas.gov.lb/economic-statistics/cpi/"
+  },
+  {
+    "rank": 24,
+    "source_name": "HDX Humanitarian API",
+    "source_family": "humanitarian_feed",
+    "priority_tier": "tier1",
+    "region_or_country": "Global",
+    "access_type": "html/api",
+    "refresh_cadence": "weekly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Automation-friendly humanitarian feed for rapid refresh of standardized indicators across crises and countries.",
+    "notes": "Use as an update-discovery and collection-refresh layer rather than a sole decision source.",
+    "url": "https://data.humdata.org/hapi"
+  },
+  {
+    "rank": 25,
+    "source_name": "HDX Signals",
+    "source_family": "humanitarian_feed",
+    "priority_tier": "tier1",
+    "region_or_country": "Global",
+    "access_type": "html",
+    "refresh_cadence": "weekly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Change-detection feed for spotting significant shifts in humanitarian datasets, including food prices and displacement-related indicators.",
+    "notes": "Use to reduce source drift and highlight what changed since the last collection cycle.",
+    "url": "https://data.humdata.org/signals"
+  },
+  {
+    "rank": 26,
+    "source_name": "UNHCR Egypt Sudan Emergency Update",
+    "source_family": "humanitarian_feed",
+    "priority_tier": "tier1",
+    "region_or_country": "Egypt/Sudan",
+    "access_type": "html/pdf",
+    "refresh_cadence": "weekly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Focused Egypt-Sudan emergency update stream for faster displacement and arrivals refresh than the broader country portal alone.",
+    "notes": "Use alongside the UNHCR Egypt portal to tighten recency on Sudan-linked movement baselines.",
+    "url": "https://data.unhcr.org/en/search?direction=desc&geo_id=1&page=1&sector=0&sector_json=%7B%220%22%3A+%220%22%7D&sort=publishDate&sv_id=0&type%5B0%5D=document"
+  },
+  {
+    "rank": 27,
+    "source_name": "WFP Global Market Monitor",
+    "source_family": "market_monitor",
+    "priority_tier": "tier1",
+    "region_or_country": "Global",
+    "access_type": "html/api",
+    "refresh_cadence": "biweekly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Cross-country and subnational market-monitor layer for price and availability context between humanitarian baselines and neighborhood market observations.",
+    "notes": "Use as the current market-monitor feed for price drift and corroboration before relying on local place or retail-proxy observations.",
+    "url": "https://data.humdata.org/dataset/global-market-monitor"
+  },
+  {
+    "rank": 28,
+    "source_name": "UN Comtrade TradeFlow",
+    "source_family": "trade",
+    "priority_tier": "tier1",
+    "region_or_country": "Global",
+    "access_type": "html/api",
+    "refresh_cadence": "monthly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Global merchandise trade backbone for monitoring food, commodity, and supply-chain flows that can explain regional assortment or pricing shifts.",
+    "notes": "Prefer deterministic CSV or API pulls over site crawling; use as the strongest multilateral trade baseline across corridor countries.",
+    "url": "https://comtradeplus.un.org/DataAvailability"
+  },
+  {
+    "rank": 29,
+    "source_name": "UNCTAD Maritime Transport Insights",
+    "source_family": "market_monitor",
+    "priority_tier": "tier1",
+    "region_or_country": "Global",
+    "access_type": "html/pdf",
+    "refresh_cadence": "periodic",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Maritime transport and port-profile context for identifying route stress, shipping disruption, and corridor pressure before it shows up in local retail signals.",
+    "notes": "Keep collection narrow and pinned to insight pages or profile PDFs rather than broad crawling.",
+    "url": "https://unctadstat.unctad.org/insights/theme/246"
+  },
+  {
+    "rank": 30,
+    "source_name": "Suez Canal Authority Navigation News",
+    "source_family": "market_monitor",
+    "priority_tier": "tier1",
+    "region_or_country": "Regional",
+    "access_type": "html/pdf",
+    "refresh_cadence": "periodic",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Chokepoint and route-stress signal for Red Sea and Eastern Mediterranean shipping conditions that can affect Israel-, Egypt-, and Gulf-facing supply chains.",
+    "notes": "Use pinned news or navigation-report URLs rather than broad site crawling; useful as a route-pressure indicator, not a direct market-price source.",
+    "url": "https://www.suezcanal.gov.eg/English/MediaCenter/News/Pages/Sca_3-3-2026.aspx"
+  },
+  {
+    "rank": 31,
+    "source_name": "Israel CBS Main Price Indices",
+    "source_family": "macro_price",
+    "priority_tier": "tier1",
+    "region_or_country": "Israel",
+    "access_type": "html/api",
+    "refresh_cadence": "monthly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Official Israel CPI and related price-index baseline for separating food-market anomalies from broader inflation or seasonal price movements.",
+    "notes": "Best official Israel macro-price control; machine collection should prefer the CBS-backed data interface behind the page.",
+    "url": "https://www.cbs.gov.il/en/Pages/Main%20Price%20Indices.aspx"
+  },
+  {
+    "rank": 32,
+    "source_name": "Israel CBS Exports and Imports Monthly Files",
+    "source_family": "trade",
+    "priority_tier": "tier1",
+    "region_or_country": "Israel",
+    "access_type": "html/xls",
+    "refresh_cadence": "monthly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Official Israel import and export flows by commodity and country for explaining food supply stress, corridor shifts, and exposure to regional trade disruption.",
+    "notes": "Prefer deterministic pulls from the monthly download page and linked files rather than scraping press releases.",
+    "url": "https://www.cbs.gov.il/en/Pages/importAndExport.aspx"
+  },
+  {
+    "rank": 33,
+    "source_name": "Ashdod Port Financial and Operating Updates",
+    "source_family": "market_monitor",
+    "priority_tier": "tier1",
+    "region_or_country": "Israel",
+    "access_type": "html/pdf",
+    "refresh_cadence": "quarterly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Port-activity and throughput signal for one of Israel's key maritime gateways, useful for monitoring resilience, congestion, and cargo stress.",
+    "notes": "Use the financial-information hub and exact release pages as pinned fetch targets; avoid broad crawling.",
+    "url": "https://www.ashdodport.co.il/about/financial-information/Pages/default.aspx"
+  },
+  {
+    "rank": 34,
+    "source_name": "Israel Airports Authority Monthly Report",
+    "source_family": "market_monitor",
+    "priority_tier": "tier1",
+    "region_or_country": "Israel",
+    "access_type": "html/pdf",
+    "refresh_cadence": "monthly",
+    "output_formats": [
+      "json",
+      "csv"
+    ],
+    "primary_use": "Air-freight and cargo-throughput proxy for Israel when maritime routes are disrupted or rerouted.",
+    "notes": "Treat as a logistics comparator alongside seaport and trade data rather than a standalone market source.",
+    "url": "https://www.iaa.gov.il/about/aeronautical-information/annualreport/"
+  }
+]
