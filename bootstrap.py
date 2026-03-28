@@ -867,6 +867,7 @@ def build_connector_queue_rows(
                 'artifact': manifest_row.get('expected_artifact', '') or 'plans/connector_readiness.csv',
                 'target_date': target_date,
                 'depends_on': '',
+                'next_action': row.get('next_action', ''),
                 'acceptance_criteria': connector_queue_acceptance_criteria(row),
             }
         )
@@ -897,6 +898,7 @@ def build_accounting_queue_rows(
                 'artifact': 'plans/recent_accounting.csv',
                 'target_date': existing.get('target_date') or target_date,
                 'depends_on': '',
+                'next_action': row.get('next_action', ''),
                 'acceptance_criteria': accounting_queue_acceptance_criteria(row),
             }
         )
@@ -959,6 +961,7 @@ def build_verification_queue_rows(
             'artifact': 'plans/source_verification_sprint.csv',
             'target_date': tracker_row.get('target_date') or utc_now().date().isoformat(),
             'depends_on': '',
+            'next_action': 'Review the verification tracker and close any remaining non-verified lane rows.',
             'acceptance_criteria': 'Verification tracker exists and captures latest visible dates, evidence links, and next actions for all scoped sources',
         }
     )
@@ -982,6 +985,7 @@ def build_verification_queue_rows(
                 'artifact': 'plans/source_verification_sprint.csv',
                 'target_date': existing.get('target_date') or utc_now().date().isoformat(),
                 'depends_on': 'VER-001',
+                'next_action': criteria,
                 'acceptance_criteria': criteria,
             }
         )
@@ -1073,6 +1077,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
             'artifact',
             'target_date',
             'depends_on',
+            'next_action',
             'acceptance_criteria',
         ],
         work_queue_rows,

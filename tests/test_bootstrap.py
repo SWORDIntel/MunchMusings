@@ -221,12 +221,12 @@ class BootstrapTests(unittest.TestCase):
             (plans_dir / 'work_queue.csv').write_text(
                 '\n'.join(
                     [
-                        'task_id,status,priority,agent,region,source_id,artifact,target_date,depends_on,acceptance_criteria',
-                        'ACC-001,completed,high,source_monitor,Egypt,seed-01,plans/recent_accounting.csv,2026-03-26,,Keep baseline task',
-                        'ACC-RA-008,pending,medium,proxy_accountant,Lebanon,seed-08,plans/recent_accounting.csv,2026-03-26,,Obsolete tier2 accounting task to remove',
-                        'ACC-RA-900,in_progress,high,humanitarian_feed_monitor,Global,seed-24,plans/recent_accounting.csv,2026-03-26,,Duplicate verification task to remove',
-                        'EXT-900,pending,high,proxy_accountant,Regional,seed-11,plans/connector_readiness.csv,2026-03-26,,Old connector task to replace',
-                        'VER-999,pending,high,source_monitor,Global,seed-24,plans/source_verification_sprint.csv,2026-03-26,,Old verification row to replace',
+                        'task_id,status,priority,agent,region,source_id,artifact,target_date,depends_on,next_action,acceptance_criteria',
+                        'ACC-001,completed,high,source_monitor,Egypt,seed-01,plans/recent_accounting.csv,2026-03-26,,,Keep baseline task',
+                        'ACC-RA-008,pending,medium,proxy_accountant,Lebanon,seed-08,plans/recent_accounting.csv,2026-03-26,,,Obsolete tier2 accounting task to remove',
+                        'ACC-RA-900,in_progress,high,humanitarian_feed_monitor,Global,seed-24,plans/recent_accounting.csv,2026-03-26,,,Duplicate verification task to remove',
+                        'EXT-900,pending,high,proxy_accountant,Regional,seed-11,plans/connector_readiness.csv,2026-03-26,,,Old connector task to replace',
+                        'VER-999,pending,high,source_monitor,Global,seed-24,plans/source_verification_sprint.csv,2026-03-26,,,Old verification row to replace',
                     ]
                 )
                 + '\n'
@@ -288,6 +288,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(sprint_lookup['seed-24']['best_current_page'], 'https://custom.example/hapi')
             self.assertEqual(connector_lookup['seed-11']['status'], 'needs_credentials')
             self.assertEqual(connector_lookup['seed-12']['status'], 'ready')
+            queue_lookup = {row['task_id']: row for row in queue_rows}
             self.assertIn('ACC-001', queue_ids)
             self.assertIn('ACC-RA-024', queue_ids)
             self.assertNotIn('ACC-RA-008', queue_ids)
@@ -297,6 +298,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertNotIn('EXT-900', queue_ids)
             self.assertIn('VER-001', queue_ids)
             self.assertIn('VER-003', queue_ids)
+            self.assertEqual(queue_lookup['EXT-011']['next_action'], 'Configure a bounded API key, quota limits, and field masks before live collection.')
 
     def test_scaffold_collection_action_writes_collection_pack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -647,8 +649,8 @@ class BootstrapTests(unittest.TestCase):
             (plans_dir / 'work_queue.csv').write_text(
                 '\n'.join(
                     [
-                        'task_id,status,priority,agent,region,source_id,artifact,target_date,depends_on,acceptance_criteria',
-                        'ACC-RA-900,in_progress,high,humanitarian_feed_monitor,Global,seed-24,plans/recent_accounting.csv,2026-03-26,,Duplicate verification task to remove',
+                        'task_id,status,priority,agent,region,source_id,artifact,target_date,depends_on,next_action,acceptance_criteria',
+                        'ACC-RA-900,in_progress,high,humanitarian_feed_monitor,Global,seed-24,plans/recent_accounting.csv,2026-03-26,,,Duplicate verification task to remove',
                     ]
                 )
                 + '\n'

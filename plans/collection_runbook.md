@@ -26,11 +26,12 @@ Define the minimum operating sequence for a lawful public-source collection cycl
 
 ## Staged External Procedure
 1. Start with the matching `EXT-*` task in `plans/work_queue.csv`.
-2. Open the staged normalized artifact referenced by that `EXT-*` row in `artifacts/collection/normalized/<source_id>.json`.
-3. Use `plans/connector_readiness.csv` to identify whether the row is credential-blocked, public-endpoint ready, manual-capture only, or browser-export only.
-4. Open the staged raw artifact in `artifacts/collection/raw/<source_id>/` when you need the exact request payload or capture surface.
-5. Treat the staged raw artifact as the authoritative execution contract for that run.
-6. Confirm the matching source spec in `plans/source_specs/` for path templates, extraction targets, quality checks, and operator steps.
+2. Read the `next_action` on that `EXT-*` row first; it should tell you whether the task is credential-blocked, query-ready, manual-capture only, or browser-export only.
+3. Open the staged normalized artifact referenced by that `EXT-*` row in `artifacts/collection/normalized/<source_id>.json`.
+4. Use `plans/connector_readiness.csv` to confirm the synced connector state and any supporting notes.
+5. Open the staged raw artifact in `artifacts/collection/raw/<source_id>/` when you need the exact request payload or capture surface.
+6. Treat the staged raw artifact as the authoritative execution contract for that run.
+7. Confirm the matching source spec in `plans/source_specs/` for path templates, extraction targets, quality checks, and operator steps.
 
 ## Contract Fields To Read
 - Query-driven rows: `district_scope`, `query_seed_file`, `query_seed_path`, `queries`, `execution_contract`, `connector_status`, `credential_state`

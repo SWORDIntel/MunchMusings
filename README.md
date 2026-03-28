@@ -7,7 +7,7 @@ MunchMusings is a planning-first, public-source intelligence workspace for detec
 - Source accounting is mostly closed: [plans/work_queue.csv](plans/work_queue.csv) has one active recency task, `ACC-RA-033`.
 - External execution is now first-class in the queue: `EXT-011` through `EXT-020` are the live staged-external operator tasks.
 - The collection manifest is stable at 27 completed runs and 7 honest `staged_external` runs in `artifacts/collection/collection-run-manifest.csv`.
-- Staged external rows are now explicit operator handoffs, not silent failures: start with the `EXT-*` row in `plans/work_queue.csv`, open the staged normalized contract it points to, then inspect `plans/connector_readiness.csv` and the staged raw spec if needed.
+- Staged external rows are now explicit operator handoffs, not silent failures: start with the `EXT-*` row in `plans/work_queue.csv`, use its `next_action`, open the staged normalized contract it points to, then inspect `plans/connector_readiness.csv` and the staged raw spec if needed.
 - `seed-05` OCHA Gaza is fixed to the live `publications/situation-reports` endpoint.
 - `seed-11` and `seed-12` now emit actionable staged request specs with matched district queries and connector readiness metadata.
 - `seed-33` Ashdod remains the only real tier-1 recency blocker.
