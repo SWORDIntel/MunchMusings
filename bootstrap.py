@@ -6700,11 +6700,17 @@ def build_pipeline_snapshot(args: argparse.Namespace) -> dict[str, Any]:
     repo_root = Path(__file__).resolve().parent
     recent_rows = load_csv_rows(Path(args.plans_dir) / 'recent_accounting.csv')
     sprint_rows = load_csv_rows(Path(args.plans_dir) / 'source_verification_sprint.csv')
+    queue_rows = load_csv_rows(Path(args.plans_dir) / 'work_queue.csv')
     collection_rows = load_csv_rows(Path(args.collection_dir) / 'collection-run-results.csv')
     latest_brief = Path(args.briefing_dir) / zone_pack_id(args.zone_name) / 'zone_brief.md'
+    active_queue_rows = [row for row in queue_rows if row.get('status') != 'completed']
+    queue_priority = {'in_progress': 0, 'blocked': 1, 'pending': 2}
+    active_queue_rows.sort(key=lambda row: (queue_priority.get(row.get('status', ''), 9), row.get('task_id', '')))
     return {
         'recent_counts': dict(Counter((row.get('recency_status', 'unknown') or 'unknown') for row in recent_rows)),
         'verification_counts': dict(Counter((row.get('status', 'pending') or 'pending') for row in sprint_rows)),
+        'queue_counts': dict(Counter((row.get('status', 'pending') or 'pending') for row in queue_rows)),
+        'queue_highlights': active_queue_rows[:5],
         'collection_counts': dict(Counter((row.get('result_status', 'unknown') or 'unknown') for row in collection_rows)),
         'latest_cycle': latest_operating_cycle_manifest(repo_root / 'artifacts' / 'operating-cycles'),
         'latest_brief_exists': latest_brief.exists(),
@@ -6715,6 +6721,12 @@ def build_pipeline_snapshot(args: argparse.Namespace) -> dict[str, Any]:
 def render_count_line(title: str, counts: dict[str, Any], order: list[str]) -> str:
     parts = [f'{key}={counts.get(key, 0)}' for key in order]
     return f'{title}: ' + ' | '.join(parts)
+
+
+def truncate_console_text(value: str, limit: int = 88) -> str:
+    if len(value) <= limit:
+        return value
+    return value[: limit - 3].rstrip() + '...'
 
 
 def render_tui_dashboard(args: argparse.Namespace, snapshot: dict[str, Any], last_summary: dict[str, Any] | None = None) -> str:
@@ -6744,12 +6756,22 @@ def render_tui_dashboard(args: argparse.Namespace, snapshot: dict[str, Any], las
         '',
         render_count_line('Recent accounting', snapshot.get('recent_counts', {}), ['current', 'due_now', 'overdue', 'manual_review', 'unknown', 'blocked']),
         render_count_line('Verification sprint', snapshot.get('verification_counts', {}), ['verified', 'research_complete', 'pending', 'blocked']),
+        render_count_line('Work queue', snapshot.get('queue_counts', {}), ['in_progress', 'blocked', 'pending', 'completed']),
         render_count_line('Collection runs', snapshot.get('collection_counts', {}), ['completed', 'staged_external', 'failed']),
         cycle_line,
         f"Latest brief: {'present' if snapshot.get('latest_brief_exists') else 'missing'} | {snapshot.get('latest_brief_path', '')}",
     ]
     if last_summary:
         lines.append(f"Last action: {last_summary.get('action', 'unknown')} | status={last_summary.get('status', 'unknown')}")
+    queue_highlights = snapshot.get('queue_highlights', [])
+    if queue_highlights:
+        lines.append('Active queue:')
+        for row in queue_highlights:
+            task_id = row.get('task_id', 'unknown')
+            status = row.get('status', 'unknown')
+            source_id = row.get('source_id', '') or '-'
+            next_action = truncate_console_text(row.get('next_action', ''))
+            lines.append(f"- {task_id} | {status} | {source_id} | {next_action}")
     lines.extend(
         [
             '',

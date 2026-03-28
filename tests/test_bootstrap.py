@@ -99,6 +99,21 @@ class BootstrapTests(unittest.TestCase):
         snapshot = {
             'recent_counts': {'current': 22},
             'verification_counts': {'verified': 2},
+            'queue_counts': {'blocked': 1, 'pending': 2},
+            'queue_highlights': [
+                {
+                    'task_id': 'EXT-011',
+                    'status': 'blocked',
+                    'source_id': 'seed-11',
+                    'next_action': 'Configure a bounded API key, quota limits, and field masks before live collection.',
+                },
+                {
+                    'task_id': 'ACC-RA-033',
+                    'status': 'pending',
+                    'source_id': 'seed-33',
+                    'next_action': 'Track the Ashdod financial-information hub and the newest linked presentation to capture future releases.',
+                },
+            ],
             'collection_counts': {'completed': 27},
             'latest_cycle': {
                 'cycle_id': '20260328T203000Z',
@@ -114,6 +129,10 @@ class BootstrapTests(unittest.TestCase):
         rendered = bootstrap.render_tui_dashboard(args, snapshot)
         self.assertIn('resume=latest', rendered)
         self.assertIn('next_step=1', rendered)
+        self.assertIn('Work queue: in_progress=0 | blocked=1 | pending=2 | completed=0', rendered)
+        self.assertIn('Active queue:', rendered)
+        self.assertIn('EXT-011 | blocked | seed-11', rendered)
+        self.assertIn('ACC-RA-033 | pending | seed-33', rendered)
 
     def test_render_tui_preflight_shows_operating_cycle_resume_flags(self) -> None:
         args = argparse.Namespace(
