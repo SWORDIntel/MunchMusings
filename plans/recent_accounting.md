@@ -1,6 +1,6 @@
 # Recent Accounting Summary
 
-_Generated: 2026-03-28T20:23:39Z._
+_Generated: 2026-03-28T20:31:35Z._
 
 ## Why this exists
 - This ledger is the execution checkpoint for keeping source claims recent, attributable, and reviewable.

@@ -631,6 +631,109 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(rows[0]['notes'], 'Use bounded Overpass queries.')
             self.assertEqual(rows[0]['url'], 'https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL')
 
+    def test_verification_sprint_finalizes_completed_external_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            plans_dir = tmp_path / 'plans'
+            collection_dir = tmp_path / 'collection'
+            normalized_dir = collection_dir / 'normalized'
+            raw_dir = collection_dir / 'raw' / 'seed-12'
+            plans_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-12,seed-12,OpenStreetMap Overpass,market_proxy,overpass_query,high,Regional,2026-03-28T00:00:00Z,{normalized_dir / "seed-12.json"},overpass-query-seeds.csv,staged_external,stage,Overpass contract staged',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'evidence-capture-log.csv').write_text(
+                '\n'.join(
+                    [
+                        'capture_id,run_id,source_id,captured_utc,capture_type,raw_path,normalized_path,evidence_path,checksum_sha256,operator,status,notes',
+                        f'capture-seed-12-1,run-seed-12,seed-12,2026-03-28T00:00:00Z,overpass_query,{raw_dir / "run-seed-12.json"},{normalized_dir / "seed-12.json"},{normalized_dir / "seed-12.json"},abc123,collector,staged_external,Request spec written for external query execution.',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-results.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,adapter_type,executed_utc,result_status,raw_path,normalized_path,notes',
+                        f'run-seed-12,seed-12,OpenStreetMap Overpass,overpass_query,2026-03-28T00:00:00Z,staged_external,{raw_dir / "run-seed-12.json"},{normalized_dir / "seed-12.json"},Request spec written for external query execution.',
+                    ]
+                )
+                + '\n'
+            )
+            completed_raw = raw_dir / 'external-overpass-result.json'
+            completed_raw.write_text('{"ok": true}\n')
+            (normalized_dir / 'seed-12.json').write_text(
+                json.dumps(
+                    {
+                        'run_id': 'run-seed-12',
+                        'source_id': 'seed-12',
+                        'source_name': 'OpenStreetMap Overpass',
+                        'adapter_type': 'overpass_query',
+                        'captured_utc': '2026-03-28T21:00:00Z',
+                        'capture_status': 'completed',
+                        'raw_path': str(completed_raw),
+                        'checksum_sha256': 'done123',
+                        'verification_updates': {
+                            'notes': 'External Overpass execution completed.',
+                            'evidence_path': str(completed_raw),
+                        },
+                    }
+                )
+                + '\n'
+            )
+
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(plans_dir),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            result = bootstrap.execute_action(args, action='verification_sprint')
+            self.assertEqual(result['status'], 'ok')
+            self.assertEqual(result['finalized_external_runs'], 1)
+
+            with (collection_dir / 'collection-run-manifest.csv').open(newline='') as handle:
+                manifest_rows = list(csv.DictReader(handle))
+            self.assertEqual(manifest_rows[0]['status'], 'completed')
+
+            with (collection_dir / 'collection-run-results.csv').open(newline='') as handle:
+                result_rows = list(csv.DictReader(handle))
+            self.assertEqual(result_rows[0]['result_status'], 'completed')
+            self.assertEqual(result_rows[0]['raw_path'], str(completed_raw))
+
+            with (collection_dir / 'evidence-capture-log.csv').open(newline='') as handle:
+                evidence_rows = list(csv.DictReader(handle))
+            self.assertEqual(evidence_rows[0]['status'], 'completed')
+            self.assertEqual(evidence_rows[0]['operator'], 'operator')
+            self.assertEqual(evidence_rows[0]['evidence_path'], str(completed_raw))
+
+            with Path(result['work_queue_csv']).open(newline='') as handle:
+                queue_rows = list(csv.DictReader(handle))
+            queue_ids = {row['task_id'] for row in queue_rows}
+            self.assertNotIn('EXT-012', queue_ids)
+
     def test_verification_sprint_generates_accounting_tasks_for_noncurrent_tier1_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

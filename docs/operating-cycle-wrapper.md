@@ -36,8 +36,8 @@ When a cycle leaves staged work:
 3. Check `plans/connector_readiness.csv` for the synced connector state and next action.
 4. Inspect the staged raw spec in `artifacts/collection/raw/<source_id>/run-*.json` when you need the exact request payload or capture surface.
 5. Follow any linked `plans/source_specs/*.json` execution contract.
-6. After the external step is completed, rerun `python bootstrap.py --recent-accounting`.
-7. Then rerun `python bootstrap.py --verification-sprint`.
+6. After the external step is completed, rerun `python bootstrap.py --verification-sprint`.
+7. That refresh also updates recent accounting, finalizes completed external captures in the collection logs, and removes resolved `EXT-*` rows.
 
 `plans/collection_runbook.md` is the operator-facing detailed runbook for this process.
 

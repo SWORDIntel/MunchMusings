@@ -996,6 +996,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
     accounting_result = write_recent_accounting_pack(args, records)
     accounting_rows = load_csv_rows(Path(accounting_result['recent_accounting_csv']))
     plans_dir = Path(args.plans_dir)
+    finalized_external_runs = finalize_completed_external_runs(Path(args.collection_dir))
     sprint_path = plans_dir / 'source_verification_sprint.csv'
     sprint_summary_path = plans_dir / 'source_verification_sprint.md'
     connector_path = plans_dir / 'connector_readiness.csv'
@@ -1097,6 +1098,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
         'connector_readiness_summary': str(connector_summary_path),
         'work_queue_csv': str(work_queue_path),
         'verification_row_count': len(sprint_rows),
+        'finalized_external_runs': finalized_external_runs,
         'synced_staged_contracts': synced_staged_contracts,
         'source_summary': build_source_summary(records),
         'launcher_mode': getattr(args, 'launcher_mode', 'cli'),
@@ -5552,6 +5554,122 @@ def refresh_connector_readiness_from_staged_contracts(
         refreshed['url'] = payload.get('connector_url', refreshed.get('url', ''))
         refreshed_rows.append(refreshed)
     return refreshed_rows
+
+
+def finalize_completed_external_runs(collection_dir: Path) -> int:
+    paths = collection_pack_paths(collection_dir)
+    manifest_rows = load_csv_rows(paths['run_manifest'])
+    if not manifest_rows:
+        return 0
+    evidence_rows = load_csv_rows(paths['evidence_log'])
+    result_rows = load_csv_rows(paths['run_results'])
+    finalized = 0
+
+    for manifest_row in manifest_rows:
+        if manifest_row.get('status') != 'staged_external':
+            continue
+        normalized_path = Path(manifest_row.get('expected_artifact', ''))
+        if not normalized_path.exists():
+            continue
+        try:
+            payload = json.loads(normalized_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if payload.get('capture_status') != 'completed':
+            continue
+
+        source_id = manifest_row.get('source_id', '')
+        run_id = manifest_row.get('run_id', '')
+        captured_utc = payload.get('captured_utc', '') or utc_now().isoformat().replace('+00:00', 'Z')
+        raw_path = payload.get('raw_path', '')
+        verification = payload.get('verification_updates', {}) if isinstance(payload.get('verification_updates'), dict) else {}
+        notes = (
+            payload.get('normalized_summary', '')
+            or verification.get('notes', '')
+            or 'External execution completed from the staged contract.'
+        )
+        evidence_path = verification.get('evidence_path', '') or raw_path or str(normalized_path)
+
+        manifest_row['status'] = 'completed'
+
+        for row in reversed(evidence_rows):
+            if row.get('run_id') == run_id and row.get('source_id') == source_id:
+                row['captured_utc'] = captured_utc
+                row['raw_path'] = raw_path or row.get('raw_path', '')
+                row['normalized_path'] = str(normalized_path)
+                row['evidence_path'] = evidence_path
+                row['checksum_sha256'] = payload.get('checksum_sha256', row.get('checksum_sha256', ''))
+                row['operator'] = 'operator'
+                row['status'] = 'completed'
+                row['notes'] = notes
+                break
+
+        for row in reversed(result_rows):
+            if row.get('run_id') == run_id and row.get('source_id') == source_id:
+                row['executed_utc'] = captured_utc
+                row['result_status'] = 'completed'
+                row['raw_path'] = raw_path or row.get('raw_path', '')
+                row['normalized_path'] = str(normalized_path)
+                row['notes'] = notes
+                break
+
+        finalized += 1
+
+    if finalized:
+        write_collection_rows(
+            paths['run_manifest'],
+            [
+                'run_id',
+                'source_id',
+                'source_name',
+                'collection_stage',
+                'adapter_type',
+                'priority',
+                'district_scope',
+                'scheduled_run_utc',
+                'expected_artifact',
+                'query_seed_file',
+                'status',
+                'failure_action',
+                'notes',
+            ],
+            manifest_rows,
+        )
+        write_collection_rows(
+            paths['evidence_log'],
+            [
+                'capture_id',
+                'run_id',
+                'source_id',
+                'captured_utc',
+                'capture_type',
+                'raw_path',
+                'normalized_path',
+                'evidence_path',
+                'checksum_sha256',
+                'operator',
+                'status',
+                'notes',
+            ],
+            evidence_rows,
+        )
+        write_collection_rows(
+            paths['run_results'],
+            [
+                'run_id',
+                'source_id',
+                'source_name',
+                'adapter_type',
+                'executed_utc',
+                'result_status',
+                'raw_path',
+                'normalized_path',
+                'notes',
+            ],
+            result_rows,
+        )
+
+    return finalized
 
 
 def write_normalized_collection_record(path: Path, payload: dict[str, Any]) -> None:

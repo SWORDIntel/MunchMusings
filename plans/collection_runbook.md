@@ -21,8 +21,8 @@ Define the minimum operating sequence for a lawful public-source collection cycl
 4. Separate results into `completed` and `staged_external` paths before doing anything else.
 5. For `completed` rows, confirm raw outputs in `artifacts/collection/raw/<source_id>/` and normalized outputs in `artifacts/collection/normalized/`.
 6. For `staged_external` rows, use the matching `EXT-*` task in `plans/work_queue.csv` as the operator action surface and the staged normalized/raw contracts as the execution surface.
-7. Re-run `python bootstrap.py --recent-accounting` and `python bootstrap.py --verification-sprint` after collection state changes.
-8. Feed verified observations into the briefing pack only after freshness and provenance are synced.
+7. Re-run `python bootstrap.py --verification-sprint` after external collection state changes; it refreshes recent accounting, finalizes completed external captures, and rebuilds the queue.
+8. Feed verified observations into the briefing pack only after freshness, provenance, and any completed external captures are synced.
 
 ## Staged External Procedure
 1. Start with the matching `EXT-*` task in `plans/work_queue.csv`.

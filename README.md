@@ -138,8 +138,8 @@ When `--collect-ready` or the operating-cycle wrapper leaves rows in `staged_ext
 4. Open the staged raw spec in `artifacts/collection/raw/<source_id>/run-*.*` when you need the exact request payload or capture surface.
 5. Follow the `execution_contract`, `connector_next_action`, and any linked `plans/source_specs/*.json` file.
 6. Capture the external result into the staged raw/normalized artifact path expected by that source.
-7. Rerun `python bootstrap.py --recent-accounting`.
-8. Rerun `python bootstrap.py --verification-sprint`.
+7. Rerun `python bootstrap.py --verification-sprint`.
+8. That refresh also updates recent accounting, finalizes completed external captures in the collection logs, and removes resolved `EXT-*` rows.
 
 `plans/collection_runbook.md` is the detailed operator runbook for this handoff.
 
