@@ -4864,6 +4864,7 @@ def build_ashdod_port_financials_payload(
     fetch_meta = {'status_code': 0, 'content_type': 'text/plain', 'bytes_written': 0, 'checksum_sha256': ''}
     secondary_raw_path = ''
     mirror_evidence_link = ''
+    verification_status = 'in_review'
     try:
         fetch_meta = fetch_direct_source(source_url, raw_path)
         page_html = raw_path.read_text(errors='replace')
@@ -4910,6 +4911,7 @@ def build_ashdod_port_financials_payload(
                     f"AnyFlip mirror fallback at {fallback_url}."
                 )
                 secondary_raw_path = str(fallback_raw_path)
+                verification_status = 'manual_review'
                 fetch_meta = {
                     'status_code': fallback_fetch['status_code'],
                     'content_type': fallback_fetch['content_type'],
@@ -4942,7 +4944,7 @@ def build_ashdod_port_financials_payload(
             'evidence_link': metadata_source_url,
             'mirror_evidence_link': mirror_evidence_link,
             'evidence_path': secondary_raw_path,
-            'status': 'in_review',
+            'status': verification_status,
             'next_action': 'Track the Ashdod financial-information hub and the newest linked presentation to capture future releases.',
             'notes': summary,
         },

@@ -1,6 +1,6 @@
 # Recent Accounting Summary
 
-_Generated: 2026-03-28T19:58:34Z._
+_Generated: 2026-03-28T20:23:39Z._
 
 ## Why this exists
 - This ledger is the execution checkpoint for keeping source claims recent, attributable, and reviewable.
@@ -11,10 +11,10 @@ _Generated: 2026-03-28T19:58:34Z._
 ## Snapshot
 - Total tracked sources: 30
 - Current: 21
-- Due now: 1
+- Due now: 0
 - Overdue: 0
 - Blocked: 0
-- Manual review cadence: 2
+- Manual review cadence: 3
 - Unknown recency: 6
 - Unassigned owners: 13
 - Pending review rows: 6

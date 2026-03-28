@@ -2221,6 +2221,7 @@ class BootstrapTests(unittest.TestCase):
             )
             self.assertEqual(payload['mirror_evidence_link'], fallback_url)
             self.assertEqual(payload['verification_updates']['mirror_evidence_link'], fallback_url)
+            self.assertEqual(payload['verification_updates']['status'], 'manual_review')
             self.assertTrue(payload['secondary_raw_path'].endswith('run-seed-33-fallback.html'))
 
     def test_collect_ready_action_extracts_ashdod_mirror_from_fallback_notes(self) -> None:
@@ -2318,6 +2319,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['mirror_evidence_link'], fallback_url)
             self.assertEqual(payload['verification_updates']['evidence_link'], source_url)
             self.assertEqual(payload['verification_updates']['mirror_evidence_link'], fallback_url)
+            self.assertEqual(payload['verification_updates']['status'], 'manual_review')
             self.assertTrue(payload['secondary_raw_path'].endswith('run-seed-33-fallback.html'))
 
     def test_collect_ready_action_extracts_wfp_factsheet_page_metadata(self) -> None:
