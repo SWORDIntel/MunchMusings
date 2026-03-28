@@ -3414,6 +3414,11 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(raw_payload['request_method'], 'GET')
             self.assertTrue(raw_payload['source_spec_path'].endswith('google_maps_billing_guidance_capture.json'))
             self.assertEqual(raw_payload['execution_contract']['request_method'], 'GET')
+            with (collection_dir / 'evidence-capture-log.csv').open(newline='') as handle:
+                evidence_rows = list(csv.DictReader(handle))
+            staged_row = next(row for row in evidence_rows if row['source_id'] == 'seed-13' and row['status'] == 'staged_external')
+            self.assertEqual(staged_row['normalized_path'], str(normalized_dir / 'seed-13.json'))
+            self.assertEqual(staged_row['evidence_path'], str(normalized_dir / 'seed-13.json'))
 
     def test_collect_ready_action_matches_place_queries_to_district_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

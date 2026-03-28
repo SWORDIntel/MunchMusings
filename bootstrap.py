@@ -5698,7 +5698,7 @@ def process_collection_run(
         'capture_type': adapter_type,
         'raw_path': str(raw_path),
         'normalized_path': str(normalized_path),
-        'evidence_path': '',
+        'evidence_path': str(normalized_path) if result_status == 'staged_external' else '',
         'checksum_sha256': normalized_payload.get('checksum_sha256', ''),
         'operator': 'collector',
         'status': result_status,
