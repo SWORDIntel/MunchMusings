@@ -31,12 +31,13 @@ What to expect:
 
 When a cycle leaves staged work:
 
-1. Check `plans/connector_readiness.csv` for the connector state and next action.
-2. Inspect the staged raw spec in `artifacts/collection/raw/<source_id>/run-*.json`.
-3. Inspect the normalized staged contract in `artifacts/collection/normalized/<source_id>.json`.
-4. Follow any linked `plans/source_specs/*.json` execution contract.
-5. After the external step is completed, rerun `python bootstrap.py --recent-accounting`.
-6. Then rerun `python bootstrap.py --verification-sprint`.
+1. Start with the matching `EXT-*` row in `plans/work_queue.csv`.
+2. Inspect the normalized staged contract in `artifacts/collection/normalized/<source_id>.json`.
+3. Check `plans/connector_readiness.csv` for the synced connector state and next action.
+4. Inspect the staged raw spec in `artifacts/collection/raw/<source_id>/run-*.json` when you need the exact request payload or capture surface.
+5. Follow any linked `plans/source_specs/*.json` execution contract.
+6. After the external step is completed, rerun `python bootstrap.py --recent-accounting`.
+7. Then rerun `python bootstrap.py --verification-sprint`.
 
 `plans/collection_runbook.md` is the operator-facing detailed runbook for this process.
 

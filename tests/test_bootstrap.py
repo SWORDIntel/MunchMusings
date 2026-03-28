@@ -562,6 +562,73 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['connector_next_action'], 'Capture the pinned page')
             self.assertEqual(payload['connector_url'], 'https://deliveroo.example/trends')
 
+    def test_refresh_connector_readiness_from_staged_contracts_syncs_capture_time(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            (collection_dir / 'normalized').mkdir(parents=True, exist_ok=True)
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-12,12,OpenStreetMap Overpass,place_query,tier1,market_proxy,api,overpass_query,json,Regional,weekly,{collection_dir / "raw" / "seed-12"},{collection_dir / "normalized" / "seed-12.json"},{collection_dir / "evidence-capture-log.csv"},overpass-query-seeds.csv,Overpass contract,https://overpass.example/query',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-12,seed-12,OpenStreetMap Overpass,market_proxy,overpass_query,high,Regional,2026-03-28T00:00:00Z,{collection_dir / "normalized" / "seed-12.json"},overpass-query-seeds.csv,staged_external,stage,Overpass contract staged',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'normalized' / 'seed-12.json').write_text(
+                json.dumps(
+                    {
+                        'source_id': 'seed-12',
+                        'captured_utc': '2026-03-28T20:03:59Z',
+                        'connector_status': 'ready',
+                        'credential_state': 'public_endpoint',
+                        'connector_next_action': 'Keep Overpass queries bounded.',
+                        'connector_notes': 'Use bounded Overpass queries.',
+                        'connector_url': 'https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL',
+                    }
+                )
+                + '\n'
+            )
+
+            rows = bootstrap.refresh_connector_readiness_from_staged_contracts(
+                [
+                    {
+                        'connector_id': 'CON-012',
+                        'status': 'ready',
+                        'priority': 'high',
+                        'owner': 'proxy_accountant',
+                        'source_id': 'seed-12',
+                        'source_name': 'OpenStreetMap Overpass',
+                        'adapter_type': 'overpass_query',
+                        'region_or_country': 'Regional',
+                        'query_seed_file': 'overpass-query-seeds.csv',
+                        'credential_state': 'public_endpoint',
+                        'last_checked_utc': '',
+                        'next_action': '',
+                        'notes': '',
+                        'url': '',
+                    }
+                ],
+                collection_dir,
+            )
+
+            self.assertEqual(rows[0]['last_checked_utc'], '2026-03-28T20:03:59Z')
+            self.assertEqual(rows[0]['status'], 'ready')
+            self.assertEqual(rows[0]['credential_state'], 'public_endpoint')
+            self.assertEqual(rows[0]['next_action'], 'Keep Overpass queries bounded.')
+            self.assertEqual(rows[0]['notes'], 'Use bounded Overpass queries.')
+            self.assertEqual(rows[0]['url'], 'https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL')
+
     def test_verification_sprint_generates_accounting_tasks_for_noncurrent_tier1_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

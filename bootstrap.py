@@ -1004,6 +1004,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
     connector_rows = build_connector_readiness_rows(records, existing_connector_rows)
     connector_lookup = {row.get('source_id', ''): row for row in connector_rows if row.get('source_id')}
     synced_staged_contracts = sync_staged_external_contracts(Path(args.collection_dir), plans_dir, connector_lookup)
+    connector_rows = refresh_connector_readiness_from_staged_contracts(connector_rows, Path(args.collection_dir))
     existing_work_queue_rows = load_csv_rows(work_queue_path)
     manifest_rows = load_csv_rows(Path(args.collection_dir) / 'collection-run-manifest.csv')
     staged_manifest_lookup = {
@@ -5505,6 +5506,45 @@ def sync_staged_external_contracts(
         write_normalized_collection_record(normalized_path, normalized_payload)
         synced += 1
     return synced
+
+
+def refresh_connector_readiness_from_staged_contracts(
+    connector_rows: list[dict[str, Any]],
+    collection_dir: Path,
+) -> list[dict[str, Any]]:
+    if not connector_rows:
+        return []
+    paths = collection_pack_paths(collection_dir)
+    adapter_lookup = load_adapter_lookup(paths['adapter_registry'])
+    manifest_lookup = {
+        row.get('source_id', ''): row
+        for row in load_csv_rows(paths['run_manifest'])
+        if row.get('status') == 'staged_external' and row.get('source_id')
+    }
+    refreshed_rows: list[dict[str, Any]] = []
+    for row in connector_rows:
+        source_id = row.get('source_id', '')
+        manifest_row = manifest_lookup.get(source_id)
+        adapter_row = adapter_lookup.get(source_id)
+        if not manifest_row or not adapter_row:
+            refreshed_rows.append(row)
+            continue
+        normalized_path = Path(adapter_row.get('normalized_output_path', collection_dir / 'normalized' / f'{source_id}.json'))
+        payload = {}
+        if normalized_path.exists():
+            try:
+                payload = json.loads(normalized_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                payload = {}
+        refreshed = dict(row)
+        refreshed['status'] = payload.get('connector_status', refreshed.get('status', ''))
+        refreshed['credential_state'] = payload.get('credential_state', refreshed.get('credential_state', ''))
+        refreshed['last_checked_utc'] = payload.get('captured_utc', refreshed.get('last_checked_utc', ''))
+        refreshed['next_action'] = payload.get('connector_next_action', refreshed.get('next_action', ''))
+        refreshed['notes'] = payload.get('connector_notes', refreshed.get('notes', ''))
+        refreshed['url'] = payload.get('connector_url', refreshed.get('url', ''))
+        refreshed_rows.append(refreshed)
+    return refreshed_rows
 
 
 def write_normalized_collection_record(path: Path, payload: dict[str, Any]) -> None:

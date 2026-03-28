@@ -132,9 +132,9 @@ python scripts/run_operating_cycle.py
 
 When `--collect-ready` or the operating-cycle wrapper leaves rows in `staged_external`, use this sequence:
 
-1. Check `plans/connector_readiness.csv` to see whether the source is `ready`, needs credentials, or needs a manual/browser step.
-2. Check the matching `EXT-*` row in `plans/work_queue.csv` to see whether the external step is pending or blocked.
-3. Open the staged normalized contract referenced by the `EXT-*` row in `artifacts/collection/normalized/<source_id>.json`.
+1. Check the matching `EXT-*` row in `plans/work_queue.csv` to see whether the external step is pending or blocked.
+2. Open the staged normalized contract referenced by the `EXT-*` row in `artifacts/collection/normalized/<source_id>.json`.
+3. Check `plans/connector_readiness.csv` to confirm the synced connector state, credential posture, and next action.
 4. Open the staged raw spec in `artifacts/collection/raw/<source_id>/run-*.*` when you need the exact request payload or capture surface.
 5. Follow the `execution_contract`, `connector_next_action`, and any linked `plans/source_specs/*.json` file.
 6. Capture the external result into the staged raw/normalized artifact path expected by that source.
