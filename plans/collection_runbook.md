@@ -20,17 +20,17 @@ Define the minimum operating sequence for a lawful public-source collection cycl
 3. Run `python bootstrap.py --collect-ready --max-runs <n>` against only the current `ready` rows.
 4. Separate results into `completed` and `staged_external` paths before doing anything else.
 5. For `completed` rows, confirm raw outputs in `artifacts/collection/raw/<source_id>/` and normalized outputs in `artifacts/collection/normalized/`.
-6. For `staged_external` rows, use the matching `EXT-*` task in `plans/work_queue.csv` as the operator action surface and the staged request contract as the execution surface.
+6. For `staged_external` rows, use the matching `EXT-*` task in `plans/work_queue.csv` as the operator action surface and the staged normalized/raw contracts as the execution surface.
 7. Re-run `python bootstrap.py --recent-accounting` and `python bootstrap.py --verification-sprint` after collection state changes.
 8. Feed verified observations into the briefing pack only after freshness and provenance are synced.
 
 ## Staged External Procedure
 1. Start with the matching `EXT-*` task in `plans/work_queue.csv`.
-2. Use `plans/connector_readiness.csv` to identify whether the row is credential-blocked, public-endpoint ready, manual-capture only, or browser-export only.
-3. Open the staged raw artifact in `artifacts/collection/raw/<source_id>/`.
-4. Treat the staged raw artifact as the authoritative execution contract for that run.
-5. Confirm the matching source spec in `plans/source_specs/` for path templates, extraction targets, quality checks, and operator steps.
-6. Use the normalized staged artifact in `artifacts/collection/normalized/<source_id>.json` as the summary contract, not as a substitute for the raw staged spec.
+2. Open the staged normalized artifact referenced by that `EXT-*` row in `artifacts/collection/normalized/<source_id>.json`.
+3. Use `plans/connector_readiness.csv` to identify whether the row is credential-blocked, public-endpoint ready, manual-capture only, or browser-export only.
+4. Open the staged raw artifact in `artifacts/collection/raw/<source_id>/` when you need the exact request payload or capture surface.
+5. Treat the staged raw artifact as the authoritative execution contract for that run.
+6. Confirm the matching source spec in `plans/source_specs/` for path templates, extraction targets, quality checks, and operator steps.
 
 ## Contract Fields To Read
 - Query-driven rows: `district_scope`, `query_seed_file`, `query_seed_path`, `queries`, `execution_contract`, `connector_status`, `credential_state`

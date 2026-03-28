@@ -8,7 +8,7 @@ The docs-first control-plane pass is mostly complete. The source-accounting lane
 - `plans/source_verification_sprint.csv` is still narrowed to `seed-25` and `seed-33`, but `seed-25` is now a low-priority `manual_review` row rather than hard recency debt.
 - `seed-02` now completes collection through a blocked-public-source fallback instead of staying `staged_external`.
 - `seed-11`, `seed-12`, and `seed-17` still require external execution, but their raw and normalized staged artifacts now carry district-scoped query payloads, source-spec metadata, and execution contracts instead of thin placeholders.
-- Manual/browser staged rows (`seed-13`, `seed-18`, `seed-19`, `seed-20`) now carry explicit operator contracts and appear in both `plans/connector_readiness.csv` and the derived `EXT-*` queue lane.
+- Manual/browser staged rows (`seed-13`, `seed-18`, `seed-19`, `seed-20`) now carry explicit operator contracts, stay refreshed during `--verification-sprint`, and appear in both `plans/connector_readiness.csv` and the derived `EXT-*` queue lane.
 
 ## What Still Matters
 - `bootstrap.py` is the control-plane entry point for recent accounting, verification sprinting, collection, and zone briefing.
@@ -22,7 +22,7 @@ The docs-first control-plane pass is mostly complete. The source-accounting lane
 
 ## Immediate Next Actions
 - Keep `seed-33` honest and provenance-rich while waiting for a newer collectible Ashdod publication.
-- Keep the staged external handoff layer aligned as operators start using the new `EXT-*` queue rows, especially for place-query execution and browser/manual captures.
+- Keep the staged external handoff layer aligned as operators start using the new `EXT-*` queue rows and their direct staged-contract artifact targets, especially for place-query execution and browser/manual captures.
 - Keep roadmap and summary docs aligned with the live queue instead of the earlier broad cleanup phase.
 
 ## Key Artifacts

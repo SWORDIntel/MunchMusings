@@ -7,7 +7,7 @@ MunchMusings is a planning-first, public-source intelligence workspace for detec
 - Source accounting is mostly closed: [plans/work_queue.csv](plans/work_queue.csv) has one active recency task, `ACC-RA-033`.
 - External execution is now first-class in the queue: `EXT-011` through `EXT-020` are the live staged-external operator tasks.
 - The collection manifest is stable at 27 completed runs and 7 honest `staged_external` runs in `artifacts/collection/collection-run-manifest.csv`.
-- Staged external rows are now explicit operator handoffs, not silent failures: start with the `EXT-*` row in `plans/work_queue.csv`, then inspect `plans/connector_readiness.csv` and the staged spec under `artifacts/collection/raw/<source_id>/`.
+- Staged external rows are now explicit operator handoffs, not silent failures: start with the `EXT-*` row in `plans/work_queue.csv`, open the staged normalized contract it points to, then inspect `plans/connector_readiness.csv` and the staged raw spec if needed.
 - `seed-05` OCHA Gaza is fixed to the live `publications/situation-reports` endpoint.
 - `seed-11` and `seed-12` now emit actionable staged request specs with matched district queries and connector readiness metadata.
 - `seed-33` Ashdod remains the only real tier-1 recency blocker.
@@ -134,11 +134,12 @@ When `--collect-ready` or the operating-cycle wrapper leaves rows in `staged_ext
 
 1. Check `plans/connector_readiness.csv` to see whether the source is `ready`, needs credentials, or needs a manual/browser step.
 2. Check the matching `EXT-*` row in `plans/work_queue.csv` to see whether the external step is pending or blocked.
-3. Open the staged spec in `artifacts/collection/raw/<source_id>/run-*.json` or the normalized contract in `artifacts/collection/normalized/<source_id>.json`.
-4. Follow the `execution_contract`, `connector_next_action`, and any linked `plans/source_specs/*.json` file.
-5. Capture the external result into the staged raw/normalized artifact path expected by that source.
-6. Rerun `python bootstrap.py --recent-accounting`.
-7. Rerun `python bootstrap.py --verification-sprint`.
+3. Open the staged normalized contract referenced by the `EXT-*` row in `artifacts/collection/normalized/<source_id>.json`.
+4. Open the staged raw spec in `artifacts/collection/raw/<source_id>/run-*.*` when you need the exact request payload or capture surface.
+5. Follow the `execution_contract`, `connector_next_action`, and any linked `plans/source_specs/*.json` file.
+6. Capture the external result into the staged raw/normalized artifact path expected by that source.
+7. Rerun `python bootstrap.py --recent-accounting`.
+8. Rerun `python bootstrap.py --verification-sprint`.
 
 `plans/collection_runbook.md` is the detailed operator runbook for this handoff.
 
