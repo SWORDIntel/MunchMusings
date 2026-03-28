@@ -517,7 +517,7 @@ _Generated: {generated_at}._
 - This ledger is the execution checkpoint for keeping source claims recent, attributable, and reviewable.
 - `recency_status` is derived from `refresh_cadence` plus `last_published_date`; blank publication dates remain `unknown`.
 - Re-running `python bootstrap.py --recent-accounting` preserves analyst-entered fields and refreshes derived status columns.
-- Connector, query, and staged external execution surfaces are tracked separately in `plans/connector_readiness.csv` and excluded from this date-based ledger.
+- Connector, query, and staged external execution surfaces are tracked in `plans/connector_readiness.csv` and surfaced as `EXT-*` rows in `plans/work_queue.csv`, separate from this date-based ledger.
 
 ## Snapshot
 - Total tracked sources: {total_sources}
@@ -779,7 +779,7 @@ def render_source_verification_summary(rows: list[dict[str, Any]]) -> str:
         '## Purpose',
         '- Keep source verification rerunnable and keyed by `source_id`.',
         '- Preserve analyst-entered state while refreshing derived source metadata from `recent_accounting.csv`.',
-        '- Track only date-bearing source rows here; connector, query, and staged external execution infrastructure lives in `plans/connector_readiness.csv`.',
+        '- Track only date-bearing source rows here; connector, query, and staged external execution infrastructure lives in `plans/connector_readiness.csv` and is actioned through `EXT-*` queue rows.',
         '- Sync verification lanes without duplicating milestone tasks.',
         '',
         '## Snapshot',
@@ -790,7 +790,7 @@ def render_source_verification_summary(rows: list[dict[str, Any]]) -> str:
     lines.extend([f"- {key}: {value}" for key, value in sorted(lane_counts.items())])
     lines.append('')
     lines.append('## Rerun')
-    lines.append('- `python bootstrap.py --verification-sprint` refreshes the ledger-backed tracker and `VER-*` queue rows.')
+    lines.append('- `python bootstrap.py --verification-sprint` refreshes the ledger-backed tracker plus derived `VER-*` and `EXT-*` queue rows.')
     return '\n'.join(lines)
 
 
@@ -1273,6 +1273,7 @@ def render_connector_readiness_summary(rows: list[dict[str, Any]]) -> str:
         '## Purpose',
         '- Track connector, query, and staged external execution infrastructure separately from publication-date verification.',
         '- Keep API/query readiness visible without inflating `unknown` source recency counts.',
+        '- Surface actionable external work through `EXT-*` rows in `plans/work_queue.csv`.',
         '',
         '## Snapshot',
     ]
@@ -1280,6 +1281,9 @@ def render_connector_readiness_summary(rows: list[dict[str, Any]]) -> str:
     lines.append('')
     lines.append('## Credential State')
     lines.extend([f"- {key}: {value}" for key, value in sorted(credential_counts.items())])
+    lines.append('')
+    lines.append('## Queue')
+    lines.append('- Run `python bootstrap.py --verification-sprint` after connector changes to refresh the derived `EXT-*` work queue rows.')
     return '\n'.join(lines)
 
 

@@ -73,6 +73,8 @@ This is the highest-leverage path because every later capability depends on know
 
 ### Queue state
 - `ACC-RA-033`: pending
+- `EXT-011`: blocked
+- `EXT-012`, `EXT-013`, `EXT-017`, `EXT-018`, `EXT-019`, `EXT-020`: pending
 - `VER-001`: completed
 - `VER-003`: completed
 - `VER-004`: completed
@@ -80,11 +82,11 @@ This is the highest-leverage path because every later capability depends on know
 ### Why this matters
 - The repo has moved past broad source-accounting cleanup into collection-loop hardening.
 - Egypt baseline work is no longer blocked by `seed-01` or `seed-02`.
-- The next bottleneck is operator use of the staged external execution contracts plus the remaining Ashdod access/freshness blocker.
+- The next bottleneck is operator execution of the formal `EXT-*` queue lane plus the remaining Ashdod access/freshness blocker.
 
 ## Recommended Next Move
 
 Use Path 1 as the control layer, then sequence Path 2 and Path 4 behind it:
 1. Keep `seed-33` explicit as the only remaining tier-1 recency blocker.
-2. Use the now-populated staged external contracts for `seed-11`, `seed-12`, `seed-17`, and the manual/browser surfaces rather than expanding the collector surface again.
+2. Use the now-populated `EXT-*` queue lane and staged execution contracts for `seed-11`, `seed-12`, `seed-17`, and the manual/browser surfaces rather than expanding the collector surface again.
 3. Freeze Egypt district/control pairs and start anomaly generation only after the operator handoff proves usable in practice.

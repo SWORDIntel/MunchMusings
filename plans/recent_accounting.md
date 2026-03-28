@@ -1,12 +1,12 @@
 # Recent Accounting Summary
 
-_Generated: 2026-03-28T19:40:35Z._
+_Generated: 2026-03-28T19:43:11Z._
 
 ## Why this exists
 - This ledger is the execution checkpoint for keeping source claims recent, attributable, and reviewable.
 - `recency_status` is derived from `refresh_cadence` plus `last_published_date`; blank publication dates remain `unknown`.
 - Re-running `python bootstrap.py --recent-accounting` preserves analyst-entered fields and refreshes derived status columns.
-- Connector, query, and staged external execution surfaces are tracked separately in `plans/connector_readiness.csv` and excluded from this date-based ledger.
+- Connector, query, and staged external execution surfaces are tracked in `plans/connector_readiness.csv` and surfaced as `EXT-*` rows in `plans/work_queue.csv`, separate from this date-based ledger.
 
 ## Snapshot
 - Total tracked sources: 30

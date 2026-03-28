@@ -1,10 +1,11 @@
 # Connector Readiness
 
-_Generated: 2026-03-28T19:40:35Z._
+_Generated: 2026-03-28T19:43:11Z._
 
 ## Purpose
 - Track connector, query, and staged external execution infrastructure separately from publication-date verification.
 - Keep API/query readiness visible without inflating `unknown` source recency counts.
+- Surface actionable external work through `EXT-*` rows in `plans/work_queue.csv`.
 
 ## Snapshot
 - needs_credentials: 1
@@ -13,3 +14,6 @@ _Generated: 2026-03-28T19:40:35Z._
 ## Credential State
 - api_key_required: 1
 - public_endpoint: 6
+
+## Queue
+- Run `python bootstrap.py --verification-sprint` after connector changes to refresh the derived `EXT-*` work queue rows.
