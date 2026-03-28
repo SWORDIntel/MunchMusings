@@ -141,6 +141,58 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('Dry-run cycle: yes', rendered)
         self.assertIn('Launch cycle dashboard: yes', rendered)
 
+    def test_prompt_tui_settings_updates_cycle_resume_fields(self) -> None:
+        args = argparse.Namespace(
+            input=str(self.seed_path),
+            output_dir='artifacts/bootstrap',
+            docs_csv='docs/source-registry.csv',
+            pack_dir='artifacts/v0_1',
+            plans_dir='plans',
+            collection_dir='artifacts/collection',
+            briefing_dir='artifacts/briefings',
+            cycle_root='artifacts/operating-cycles',
+            zone_name='Cairo/Giza pilot',
+            zone_country='Egypt',
+            max_runs=5,
+            verbose=False,
+            resume_cycle_dir='',
+            resume_latest=False,
+            dry_run_cycle=False,
+            cycle_dashboard=False,
+            force_version=1,
+        )
+
+        with patch.object(
+            bootstrap,
+            'prompt_with_default',
+            side_effect=[
+                str(self.seed_path),
+                'artifacts/bootstrap',
+                'docs/source-registry.csv',
+                'artifacts/v0_1',
+                'plans',
+                'artifacts/collection',
+                'artifacts/briefings',
+                'artifacts/custom-cycles',
+                'Cairo/Giza pilot',
+                'Egypt',
+                '9',
+                'artifacts/custom-cycles/20260328T120000Z',
+            ],
+        ), patch.object(
+            bootstrap,
+            'prompt_yes_no',
+            side_effect=[True, True, True, True, False],
+        ):
+            updated = bootstrap.prompt_tui_settings(args)
+
+        self.assertEqual(updated.cycle_root, 'artifacts/custom-cycles')
+        self.assertEqual(updated.resume_cycle_dir, 'artifacts/custom-cycles/20260328T120000Z')
+        self.assertTrue(updated.resume_latest)
+        self.assertTrue(updated.dry_run_cycle)
+        self.assertTrue(updated.cycle_dashboard)
+        self.assertEqual(updated.max_runs, 9)
+
     def test_bootstrap_action_writes_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

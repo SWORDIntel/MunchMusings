@@ -6774,10 +6774,15 @@ def prompt_tui_settings(args: argparse.Namespace) -> argparse.Namespace:
     args.plans_dir = prompt_with_default('Plans directory', args.plans_dir)
     args.collection_dir = prompt_with_default('Collection directory', args.collection_dir)
     args.briefing_dir = prompt_with_default('Briefing directory', args.briefing_dir)
+    args.cycle_root = prompt_with_default('Operating cycle root', getattr(args, 'cycle_root', 'artifacts/operating-cycles'))
     args.zone_name = prompt_with_default('Zone name', args.zone_name)
     args.zone_country = prompt_with_default('Zone country', args.zone_country)
     args.max_runs = int(prompt_with_default('Max runs per collect-ready', str(args.max_runs)))
     args.verbose = prompt_yes_no('Verbose logging', default_yes=args.verbose)
+    args.resume_cycle_dir = prompt_with_default('Resume cycle directory', getattr(args, 'resume_cycle_dir', ''))
+    args.resume_latest = prompt_yes_no('Resume latest incomplete cycle', default_yes=getattr(args, 'resume_latest', False))
+    args.dry_run_cycle = prompt_yes_no('Dry-run operating cycle', default_yes=getattr(args, 'dry_run_cycle', False))
+    args.cycle_dashboard = prompt_yes_no('Launch cycle dashboard', default_yes=getattr(args, 'cycle_dashboard', False))
     if prompt_yes_no('Update forced bootstrap version now', default_yes=False):
         args.force_version = prompt_optional_int('Forced version number')
     return args
