@@ -3,7 +3,7 @@
   "source_name": "Ashdod Port Financial and Operating Updates",
   "collection_role": "market_monitor",
   "collection_mode": "automatable",
-  "adapter_type": "html_snapshot",
+  "adapter_type": "ashdod_port_financials",
   "request_method": "GET",
   "request_params": {
     "url": "https://www.ashdodport.co.il/about/financial-information/Pages/default.aspx",
@@ -12,10 +12,10 @@
   },
   "extraction_targets": [
     "latest financial report title",
-    "revenue and profit figures",
-    "container throughput (TEU)",
-    "vehicle and bulk cargo stats",
-    "investment and upgrade announcements"
+    "latest visible publication date from the official hub or linked mirror",
+    "latest covered reporting period",
+    "official hub evidence link",
+    "fallback mirror evidence link when the official hub blocks direct parsing"
   ],
   "normalization_expectations": {
     "primary_record_family": "source_pull",
@@ -23,18 +23,19 @@
     "required_fields": [
       "source_id",
       "captured_utc",
-      "published_date",
+      "metadata_source_url",
       "latest_period_covered",
-      "throughput_teu",
-      "revenue_nis",
-      "source_url"
+      "mirror_evidence_link",
+      "secondary_raw_path"
     ],
-    "observation_summary": "Ashdod Port throughput serves as a primary maritime proxy for Israel's supply chain resilience."
+    "observation_summary": "Ashdod Port serves as a primary maritime proxy for Israel's supply chain resilience; current collection prioritizes defensible publication metadata and provenance over unsupported throughput extraction."
   },
-  "raw_path_template": "artifacts/collection/raw/seed-33/ashdod_port_snapshot.html",
+  "raw_path_template": "artifacts/collection/raw/seed-33/run-seed-33.html",
+  "fallback_raw_path_template": "artifacts/collection/raw/seed-33/run-seed-33-fallback.html",
   "normalized_path_template": "artifacts/collection/normalized/seed-33.json",
   "quality_checks": [
-    "Verify throughput data matches the reported quarter.",
-    "Cross-reference with Port2Port or other maritime news aggregators."
+    "Keep the official Ashdod hub as the canonical metadata source when direct fetches are blocked.",
+    "Record AnyFlip or linked mirror provenance only as fallback evidence, not as the canonical source of truth.",
+    "Verify the latest covered reporting period matches the latest visible publication title or metadata."
   ]
 }

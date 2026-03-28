@@ -225,6 +225,7 @@ class BootstrapTests(unittest.TestCase):
                         'ACC-001,completed,high,source_monitor,Egypt,seed-01,plans/recent_accounting.csv,2026-03-26,,Keep baseline task',
                         'ACC-RA-008,pending,medium,proxy_accountant,Lebanon,seed-08,plans/recent_accounting.csv,2026-03-26,,Obsolete tier2 accounting task to remove',
                         'ACC-RA-900,in_progress,high,humanitarian_feed_monitor,Global,seed-24,plans/recent_accounting.csv,2026-03-26,,Duplicate verification task to remove',
+                        'EXT-900,pending,high,proxy_accountant,Regional,seed-11,plans/connector_readiness.csv,2026-03-26,,Old connector task to replace',
                         'VER-999,pending,high,source_monitor,Global,seed-24,plans/source_verification_sprint.csv,2026-03-26,,Old verification row to replace',
                     ]
                 )
@@ -279,6 +280,9 @@ class BootstrapTests(unittest.TestCase):
             self.assertIn('ACC-RA-024', queue_ids)
             self.assertNotIn('ACC-RA-008', queue_ids)
             self.assertNotIn('ACC-RA-900', queue_ids)
+            self.assertIn('EXT-011', queue_ids)
+            self.assertIn('EXT-012', queue_ids)
+            self.assertNotIn('EXT-900', queue_ids)
             self.assertIn('VER-001', queue_ids)
             self.assertIn('VER-003', queue_ids)
 
@@ -392,13 +396,56 @@ class BootstrapTests(unittest.TestCase):
             },
         ]
 
-        queue_rows = bootstrap.build_verification_queue_rows([], accounting_rows, sprint_rows)
+        connector_rows = [
+            {
+                'connector_id': 'CON-011',
+                'status': 'needs_credentials',
+                'priority': 'high',
+                'owner': 'proxy_accountant',
+                'source_id': 'seed-11',
+                'region_or_country': 'Regional',
+                'source_name': 'Google Places API',
+            }
+        ]
+
+        queue_rows = bootstrap.build_verification_queue_rows([], accounting_rows, sprint_rows, connector_rows)
         queue_lookup = {row['task_id']: row for row in queue_rows}
 
         self.assertEqual(queue_lookup['VER-001']['status'], 'completed')
         self.assertNotIn('VER-002', queue_lookup)
         self.assertIn('VER-003', queue_lookup)
         self.assertIn('VER-004', queue_lookup)
+        self.assertEqual(queue_lookup['EXT-011']['status'], 'blocked')
+
+    def test_build_connector_queue_rows_maps_connector_state_into_ext_tasks(self) -> None:
+        connector_rows = [
+            {
+                'connector_id': 'CON-011',
+                'status': 'needs_credentials',
+                'priority': 'high',
+                'owner': 'proxy_accountant',
+                'source_id': 'seed-11',
+                'region_or_country': 'Regional',
+                'source_name': 'Google Places API',
+            },
+            {
+                'connector_id': 'CON-012',
+                'status': 'ready',
+                'priority': 'high',
+                'owner': 'proxy_accountant',
+                'source_id': 'seed-12',
+                'region_or_country': 'Regional',
+                'source_name': 'OpenStreetMap Overpass',
+            },
+        ]
+
+        queue_rows = bootstrap.build_connector_queue_rows(connector_rows, {})
+        queue_lookup = {row['task_id']: row for row in queue_rows}
+
+        self.assertEqual(queue_lookup['EXT-011']['status'], 'blocked')
+        self.assertEqual(queue_lookup['EXT-011']['artifact'], 'plans/connector_readiness.csv')
+        self.assertEqual(queue_lookup['EXT-012']['status'], 'pending')
+        self.assertEqual(queue_lookup['EXT-012']['agent'], 'proxy_accountant')
 
     def test_verification_sprint_generates_accounting_tasks_for_noncurrent_tier1_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

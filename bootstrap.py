@@ -819,6 +819,53 @@ def accounting_queue_acceptance_criteria(row: dict[str, str]) -> str:
     )
 
 
+def connector_queue_status(existing: dict[str, str], connector_status: str) -> str:
+    preserved_status = existing.get('status', '').strip()
+    if preserved_status in {'in_progress', 'blocked'}:
+        return preserved_status
+    if connector_status in {'needs_credentials', 'blocked'}:
+        return 'blocked'
+    return 'pending'
+
+
+def connector_queue_acceptance_criteria(row: dict[str, str]) -> str:
+    source_name = row.get('source_name', 'Connector row')
+    return (
+        f"{source_name} staged execution contract is either completed and captured in the expected collection "
+        "artifacts, or blocked state is recorded with the next required operator action"
+    )
+
+
+def build_connector_queue_rows(
+    connector_rows: list[dict[str, str]],
+    existing_lookup: dict[str, dict[str, str]],
+) -> list[dict[str, Any]]:
+    rows = []
+    for row in connector_rows:
+        connector_id = row.get('connector_id', '')
+        task_suffix = connector_id.split('-', 1)[1] if '-' in connector_id else (row.get('source_id', '').split('-', 1)[1] if '-' in row.get('source_id', '') else row.get('source_id', ''))
+        if not task_suffix:
+            continue
+        task_id = f'EXT-{task_suffix}'
+        existing = existing_lookup.get(task_id, {})
+        target_date = existing.get('target_date') or utc_now().date().isoformat()
+        rows.append(
+            {
+                'task_id': task_id,
+                'status': connector_queue_status(existing, row.get('status', '')),
+                'priority': row.get('priority', '') or 'low',
+                'agent': row.get('owner', '') or 'source_monitor',
+                'region': row.get('region_or_country', ''),
+                'source_id': row.get('source_id', ''),
+                'artifact': 'plans/connector_readiness.csv',
+                'target_date': target_date,
+                'depends_on': '',
+                'acceptance_criteria': connector_queue_acceptance_criteria(row),
+            }
+        )
+    return rows
+
+
 def build_accounting_queue_rows(
     accounting_rows: list[dict[str, str]],
     existing_lookup: dict[str, dict[str, str]],
@@ -853,15 +900,19 @@ def build_verification_queue_rows(
     existing_rows: list[dict[str, str]],
     accounting_rows: list[dict[str, str]],
     sprint_rows: list[dict[str, Any]],
+    connector_rows: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
     existing_lookup = {row.get('task_id', ''): row for row in existing_rows if row.get('task_id')}
     accounting_source_ids = {row.get('source_id', '') for row in accounting_rows if row.get('source_id')}
+    connector_source_ids = {row.get('source_id', '') for row in connector_rows if row.get('source_id')}
     preserved_rows = []
     for row in existing_rows:
         task_id = row.get('task_id', '')
         if task_id.startswith('VER-'):
             continue
         if task_id.startswith('ACC-RA-') and row.get('artifact') == 'plans/recent_accounting.csv' and row.get('source_id', '') in accounting_source_ids:
+            continue
+        if task_id.startswith('EXT-') and row.get('artifact') == 'plans/connector_readiness.csv' and row.get('source_id', '') in connector_source_ids:
             continue
         preserved_rows.append(row)
     lane_map = {
@@ -881,6 +932,7 @@ def build_verification_queue_rows(
         return 'pending'
 
     accounting_queue_rows = build_accounting_queue_rows(accounting_rows, existing_lookup)
+    connector_queue_rows = build_connector_queue_rows(connector_rows, existing_lookup)
     ver_rows = []
     tracker_row = existing_lookup.get('VER-001', {})
     ver_rows.append(
@@ -924,7 +976,7 @@ def build_verification_queue_rows(
                 'acceptance_criteria': criteria,
             }
         )
-    return preserved_rows + accounting_queue_rows + ver_rows
+    return preserved_rows + accounting_queue_rows + connector_queue_rows + ver_rows
 
 
 def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -942,7 +994,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
     sprint_rows = build_source_verification_rows(accounting_rows, existing_sprint_rows)
     connector_rows = build_connector_readiness_rows(records, existing_connector_rows)
     existing_work_queue_rows = load_csv_rows(work_queue_path)
-    work_queue_rows = build_verification_queue_rows(existing_work_queue_rows, accounting_rows, sprint_rows)
+    work_queue_rows = build_verification_queue_rows(existing_work_queue_rows, accounting_rows, sprint_rows, connector_rows)
 
     write_rows_csv(
         [
