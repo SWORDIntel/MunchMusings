@@ -1,0 +1,28 @@
+{
+  "source_id": "seed-18",
+  "source_name": "Deliveroo UAE trend releases",
+  "collection_role": "supporting_proxy",
+  "collection_mode": "manual_review",
+  "adapter_type": "manual_capture",
+  "request_method": "GET",
+  "request_params": {
+    "page_url": "https://deliveroo.ae/more/news-articles/11-dishes-from-uae-restaurants-make-it-to-deliveroo-s-top-100-trending-dishes-of-2024",
+    "capture_mode": "manual_page_review"
+  },
+  "operator_steps": [
+    "Capture the current Deliveroo release page.",
+    "Record the visible publication date and any cited time window."
+  ],
+  "extraction_targets": [
+    "publication date",
+    "trend window",
+    "named dishes or categories",
+    "quoted growth or ranking claims"
+  ],
+  "raw_path_template": "artifacts/collection/raw/seed-18/manual_capture/<run_id>.json",
+  "normalized_path_template": "artifacts/collection/normalized/seed-18.json",
+  "quality_checks": [
+    "Keep this source as supporting evidence only.",
+    "Do not treat food-delivery marketing copy as standalone demographic proof."
+  ]
+}

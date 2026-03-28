@@ -524,7 +524,7 @@
       "csv"
     ],
     "primary_use": "Port-activity and throughput signal for one of Israel's key maritime gateways, useful for monitoring resilience, congestion, and cargo stress.",
-    "notes": "Use the financial-information hub and exact release pages as pinned fetch targets; avoid broad crawling.",
+    "notes": "Use the official financial-information hub and exact release pages as the primary evidence targets; if the hub is blocked, record a pinned secondary mirror only as provenance support and avoid broad crawling or bypass work.",
     "url": "https://www.ashdodport.co.il/about/financial-information/Pages/default.aspx"
   },
   {

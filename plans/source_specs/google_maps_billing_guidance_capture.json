@@ -1,0 +1,27 @@
+{
+  "source_id": "seed-13",
+  "source_name": "Google Maps billing guidance",
+  "collection_role": "market_proxy",
+  "collection_mode": "manual_review",
+  "adapter_type": "manual_capture",
+  "request_method": "GET",
+  "request_params": {
+    "page_url": "https://developers.google.com/maps/billing-and-pricing/manage-costs",
+    "capture_mode": "manual_page_review"
+  },
+  "operator_steps": [
+    "Capture the current pricing and quota-control page.",
+    "Record any cost-control recommendations that constrain Places collection."
+  ],
+  "extraction_targets": [
+    "billing controls",
+    "quota guidance",
+    "field-mask guidance"
+  ],
+  "raw_path_template": "artifacts/collection/raw/seed-13/manual_capture/<run_id>.json",
+  "normalized_path_template": "artifacts/collection/normalized/seed-13.json",
+  "quality_checks": [
+    "Keep this source in a supporting operational role only.",
+    "Do not treat billing guidance as a market observation."
+  ]
+}

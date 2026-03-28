@@ -1,0 +1,29 @@
+{
+  "source_id": "seed-20",
+  "source_name": "Google Trends",
+  "collection_role": "supporting_proxy",
+  "collection_mode": "manual_review",
+  "adapter_type": "browser_export",
+  "request_method": "GET",
+  "request_params": {
+    "page_url": "https://trends.google.com/explore",
+    "capture_mode": "browser_export",
+    "export_format": "csv"
+  },
+  "operator_steps": [
+    "Open the configured Trends comparison in the browser.",
+    "Export the visible time-series or geography table as CSV and retain the exact query settings."
+  ],
+  "extraction_targets": [
+    "query terms",
+    "geography",
+    "time window",
+    "exported trend values"
+  ],
+  "raw_path_template": "artifacts/collection/raw/seed-20/browser_export/<run_id>.json",
+  "normalized_path_template": "artifacts/collection/normalized/seed-20.json",
+  "quality_checks": [
+    "Retain the exact query settings with the export artifact.",
+    "Use Trends only as a weak corroborating signal."
+  ]
+}

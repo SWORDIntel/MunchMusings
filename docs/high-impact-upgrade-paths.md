@@ -59,7 +59,7 @@ This is the highest-leverage path because every later capability depends on know
 ### Current repo state
 - Total tracked sources: 30
 - Current sources: 21
-- Due-now sources: 2
+- Due-now sources: 1
 - Overdue sources: 0
 - Unknown sources: 6
 - Active recent-accounting queue tasks: 1 (`ACC-RA-033`)
@@ -68,6 +68,7 @@ This is the highest-leverage path because every later capability depends on know
 - `seed-01` UNHCR Egypt: current
 - `seed-02` IOM DTM Sudan: current via blocked-public-source fallback
 - `seed-05` OCHA OPT Gaza updates: current on the live `publications/situation-reports` endpoint
+- `seed-25` HDX Signals: retained as a tier-2 `manual_review` monitor rather than hard recency debt
 - `seed-33` Ashdod Port: `due_now`, still the only real tier-1 recency blocker
 
 ### Queue state
@@ -79,11 +80,11 @@ This is the highest-leverage path because every later capability depends on know
 ### Why this matters
 - The repo has moved past broad source-accounting cleanup into collection-loop hardening.
 - Egypt baseline work is no longer blocked by `seed-01` or `seed-02`.
-- The next bottleneck is staged external execution quality for the place-query stack plus the remaining Ashdod access/freshness blocker.
+- The next bottleneck is operator use of the staged external execution contracts plus the remaining Ashdod access/freshness blocker.
 
 ## Recommended Next Move
 
 Use Path 1 as the control layer, then sequence Path 2 and Path 4 behind it:
 1. Keep `seed-33` explicit as the only remaining tier-1 recency blocker.
-2. Improve staged external execution contracts for `seed-11` and `seed-12`.
-3. Freeze Egypt district/control pairs and start anomaly generation only after the place-query handoff is operationally usable.
+2. Use the now-populated staged external contracts for `seed-11`, `seed-12`, `seed-17`, and the manual/browser surfaces rather than expanding the collector surface again.
+3. Freeze Egypt district/control pairs and start anomaly generation only after the operator handoff proves usable in practice.

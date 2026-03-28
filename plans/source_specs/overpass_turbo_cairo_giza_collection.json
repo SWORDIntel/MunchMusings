@@ -1,0 +1,62 @@
+{
+  "source_id": "seed-17",
+  "source_name": "Overpass Turbo",
+  "collection_role": "market_proxy",
+  "collection_mode": "manual_review",
+  "adapter_type": "overpass_query",
+  "request_method": "POST",
+  "request_params": {
+    "query_seed_file": "artifacts/collection/overpass-query-seeds.csv",
+    "scope": "Cairo/Giza pilot",
+    "districts": [
+      "Nasr City",
+      "6th of October City",
+      "Ain Shams / Matariya cluster",
+      "Giza / Faisal corridor",
+      "Imbaba",
+      "Shubra El Kheima"
+    ],
+    "tags": [
+      "shop=bakery",
+      "shop=convenience",
+      "shop=supermarket",
+      "amenity=cafe",
+      "shop=confectionery"
+    ],
+    "capture_limit": 200
+  },
+  "extraction_targets": [
+    "overpass_turbo_query",
+    "export_url",
+    "osm_id",
+    "name",
+    "tags",
+    "geometry",
+    "timestamp",
+    "district mapping",
+    "shop/category signal"
+  ],
+  "normalization_expectations": {
+    "primary_record_family": "source_observation",
+    "secondary_record_family": "place_snapshot",
+    "required_fields": [
+      "observation_id",
+      "source_id",
+      "zone_name",
+      "district_or_neighborhood",
+      "observation_type",
+      "capture_utc",
+      "normalized_summary",
+      "confidence",
+      "evidence_path"
+    ],
+    "observation_summary": "Use Overpass Turbo for analyst-driven query iteration and export before promoting stable packs into automated Overpass collection."
+  },
+  "raw_path_template": "artifacts/collection/raw/seed-17/overpass_turbo/<run_id>.json",
+  "normalized_path_template": "artifacts/collection/normalized/seed-17.json",
+  "quality_checks": [
+    "Preserve the analyst query text and exported Turbo link together.",
+    "Retain the raw Overpass JSON response or export artifact.",
+    "Separate geometry from analyst summary."
+  ]
+}

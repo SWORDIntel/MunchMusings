@@ -372,6 +372,16 @@ def derive_recency_status(
     return 'overdue'
 
 
+def soften_nonblocking_recency(record: dict[str, Any], recency_status: str) -> str:
+    if (
+        record.get('priority_tier') != 'tier1'
+        and record.get('source_family') == 'humanitarian_feed'
+        and recency_status in {'due_now', 'overdue'}
+    ):
+        return 'manual_review'
+    return recency_status
+
+
 def next_check_due_utc(refresh_cadence: str, last_checked_utc: str) -> str:
     checked_at = parse_accounting_date(last_checked_utc)
     window_days = recency_window_days(refresh_cadence)
@@ -432,6 +442,16 @@ def build_recent_accounting_rows(
         next_action = existing.get('next_action', 'Verify latest publication date, coverage window, and evidence link.')
         notes = existing.get('notes', record['notes']) or record['notes']
 
+        recency_status = soften_nonblocking_recency(
+            record,
+            derive_recency_status(
+                record['refresh_cadence'],
+                last_published_date,
+                status,
+                latest_period_covered,
+            ),
+        )
+
         rows.append(
             {
                 'source_id': source_id,
@@ -446,12 +466,7 @@ def build_recent_accounting_rows(
                 'last_published_date': last_published_date,
                 'latest_period_covered': latest_period_covered,
                 'claim_date_utc': claim_date_utc,
-                'recency_status': derive_recency_status(
-                    record['refresh_cadence'],
-                    last_published_date,
-                    status,
-                    latest_period_covered,
-                ),
+                'recency_status': recency_status,
                 'owner': owner,
                 'evidence_link': evidence_link,
                 'mirror_evidence_link': mirror_evidence_link,
@@ -502,7 +517,7 @@ _Generated: {generated_at}._
 - This ledger is the execution checkpoint for keeping source claims recent, attributable, and reviewable.
 - `recency_status` is derived from `refresh_cadence` plus `last_published_date`; blank publication dates remain `unknown`.
 - Re-running `python bootstrap.py --recent-accounting` preserves analyst-entered fields and refreshes derived status columns.
-- Connector/query sources are tracked separately in `plans/connector_readiness.csv` and excluded from this date-based ledger.
+- Connector, query, and staged external execution surfaces are tracked separately in `plans/connector_readiness.csv` and excluded from this date-based ledger.
 
 ## Snapshot
 - Total tracked sources: {total_sources}
@@ -686,6 +701,20 @@ def load_existing_rows_by_key(path: Path, key_field: str) -> dict[str, dict[str,
         }
 
 
+def load_source_spec(plans_dir: Path, source_id: str) -> tuple[Path | None, dict[str, Any]]:
+    source_specs_dir = plans_dir / 'source_specs'
+    if not source_specs_dir.exists():
+        return None, {}
+    for candidate in sorted(source_specs_dir.glob('*.json')):
+        try:
+            payload = json.loads(candidate.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict) and payload.get('source_id') == source_id:
+            return candidate, payload
+    return None, {}
+
+
 def build_source_verification_rows(
     accounting_rows: list[dict[str, str]],
     existing_rows: dict[str, dict[str, str]] | None = None,
@@ -727,6 +756,7 @@ def build_source_verification_rows(
                 'recency_status': row.get('recency_status', ''),
                 'evidence_link': row.get('evidence_link', '') if source_state_changed else preserve_url(existing, 'evidence_link', row.get('evidence_link', '')),
                 'mirror_evidence_link': row.get('mirror_evidence_link', ''),
+                'evidence_path': row.get('evidence_path', ''),
                 'last_checked_utc': row.get('last_checked_utc', ''),
                 'next_action': row.get('next_action', '') if source_state_changed else preserve_text(existing, 'next_action', row.get('next_action', '')),
                 'notes': preserve_text(existing, 'notes', row.get('notes', '')),
@@ -749,7 +779,7 @@ def render_source_verification_summary(rows: list[dict[str, Any]]) -> str:
         '## Purpose',
         '- Keep source verification rerunnable and keyed by `source_id`.',
         '- Preserve analyst-entered state while refreshing derived source metadata from `recent_accounting.csv`.',
-        '- Track only date-bearing source rows here; connector/query infrastructure lives in `plans/connector_readiness.csv`.',
+        '- Track only date-bearing source rows here; connector, query, and staged external execution infrastructure lives in `plans/connector_readiness.csv`.',
         '- Sync verification lanes without duplicating milestone tasks.',
         '',
         '## Snapshot',
@@ -932,6 +962,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
             'recency_status',
             'evidence_link',
             'mirror_evidence_link',
+            'evidence_path',
             'last_checked_utc',
             'next_action',
             'notes',
@@ -1115,9 +1146,33 @@ def connector_default_status(record: dict[str, Any]) -> str:
 
 
 def connector_default_next_action(record: dict[str, Any]) -> str:
+    adapter_type = collection_adapter_type(record)
     if record.get('source_name') == 'Google Places API':
         return 'Configure a bounded API key, quota limits, and field masks before live collection.'
-    return 'Keep Overpass queries bounded and monitor endpoint policy, latency, and query failures.'
+    if adapter_type == 'overpass_query':
+        return 'Keep Overpass queries bounded and monitor endpoint policy, latency, and query failures.'
+    if adapter_type == 'browser_export':
+        return 'Open the export surface with the exact query settings, retain the exported file, and record the capture configuration.'
+    return 'Capture the pinned page or export surface, retain the raw artifact, and record the visible publication date and coverage note.'
+
+
+def tracks_connector_readiness(record: dict[str, Any]) -> bool:
+    return collection_adapter_type(record) in {
+        'places_api_search',
+        'overpass_query',
+        'manual_capture',
+        'browser_export',
+    }
+
+
+def preserve_connector_next_action(existing: dict[str, str], record: dict[str, Any]) -> str:
+    value = existing.get('next_action', '').strip()
+    default = connector_default_next_action(record)
+    if not value:
+        return default
+    if collection_adapter_type(record) != 'overpass_query' and value == 'Keep Overpass queries bounded and monitor endpoint policy, latency, and query failures.':
+        return default
+    return value
 
 
 def build_connector_readiness_rows(
@@ -1127,7 +1182,7 @@ def build_connector_readiness_rows(
     existing_rows = existing_rows or {}
     rows = []
     for record in sorted(records, key=lambda item: item['rank']):
-        if record.get('source_family') != 'place':
+        if not tracks_connector_readiness(record):
             continue
         source_id = source_id_for_record(record)
         existing = existing_rows.get(source_id, {})
@@ -1144,7 +1199,7 @@ def build_connector_readiness_rows(
                 'query_seed_file': collection_query_seed_file(record),
                 'credential_state': existing.get('credential_state') or connector_credential_state(record),
                 'last_checked_utc': existing.get('last_checked_utc', ''),
-                'next_action': preserve_text(existing, 'next_action', connector_default_next_action(record)),
+                'next_action': preserve_connector_next_action(existing, record),
                 'notes': preserve_text(existing, 'notes', record.get('notes', '')),
                 'url': record.get('url', ''),
             }
@@ -1164,7 +1219,7 @@ def render_connector_readiness_summary(rows: list[dict[str, Any]]) -> str:
         f"_Generated: {utc_now().isoformat().replace('+00:00', 'Z')}._",
         '',
         '## Purpose',
-        '- Track connector and query infrastructure separately from publication-date verification.',
+        '- Track connector, query, and staged external execution infrastructure separately from publication-date verification.',
         '- Keep API/query readiness visible without inflating `unknown` source recency counts.',
         '',
         '## Snapshot',
@@ -1762,6 +1817,12 @@ def build_collection_findings_updates(normalized_payloads: list[dict[str, Any]])
             continue
         updates[source_id] = {field: str(finding.get(field, '')).strip() for field in RECENT_ACCOUNTING_FINDINGS_FIELDS}
         updates[source_id]['source_id'] = source_id
+        if not updates[source_id].get('evidence_path'):
+            updates[source_id]['evidence_path'] = (
+                str(payload.get('secondary_raw_path', '')).strip()
+                or str(payload.get('tertiary_raw_path', '')).strip()
+                or str(payload.get('raw_path', '')).strip()
+            )
     return updates
 
 
@@ -4800,7 +4861,7 @@ def build_ashdod_port_financials_payload(
             'owner': '',
             'evidence_link': metadata_source_url,
             'mirror_evidence_link': mirror_evidence_link,
-            'evidence_path': '',
+            'evidence_path': secondary_raw_path,
             'status': 'in_review',
             'next_action': 'Track the Ashdod financial-information hub and the newest linked presentation to capture future releases.',
             'notes': summary,
@@ -5111,6 +5172,100 @@ def build_sca_navigation_news_payload(
     }
 
 
+def build_places_execution_contract(
+    relevant_queries: list[dict[str, str]],
+    source_spec: dict[str, Any],
+    connector_row: dict[str, str],
+) -> dict[str, Any]:
+    request_params = source_spec.get('request_params', {}) if isinstance(source_spec, dict) else {}
+    fields = request_params.get('fields', []) if isinstance(request_params, dict) else []
+    field_mask = ','.join(fields) if isinstance(fields, list) else ''
+    capture_limit = request_params.get('capture_limit', '')
+    return {
+        'request_method': source_spec.get('request_method', 'POST'),
+        'search_endpoint': 'https://places.googleapis.com/v1/places:searchText',
+        'details_endpoint_template': 'https://places.googleapis.com/v1/places/{place_id}',
+        'field_mask': field_mask,
+        'capture_limit': capture_limit,
+        'credential_state': connector_row.get('credential_state', ''),
+        'per_query_requests': [
+            {
+                'query_id': row.get('query_id', ''),
+                'district_name': row.get('district_name', ''),
+                'place_type': row.get('place_type', ''),
+                'search_mode': row.get('search_mode', ''),
+                'text_query': row.get('query_text', ''),
+                'request_body': {'textQuery': row.get('query_text', ''), 'maxResultCount': capture_limit or 50},
+            }
+            for row in relevant_queries
+        ],
+    }
+
+
+def build_overpass_execution_contract(
+    relevant_queries: list[dict[str, str]],
+    source_spec: dict[str, Any],
+    connector_row: dict[str, str],
+) -> dict[str, Any]:
+    request_params = source_spec.get('request_params', {}) if isinstance(source_spec, dict) else {}
+    capture_limit = request_params.get('capture_limit', '')
+    interpreter_url = 'https://overpass-api.de/api/interpreter'
+    return {
+        'request_method': source_spec.get('request_method', 'POST'),
+        'interpreter_url': interpreter_url,
+        'output_format': 'json',
+        'capture_limit': capture_limit,
+        'credential_state': connector_row.get('credential_state', ''),
+        'per_query_requests': [
+            {
+                'query_id': row.get('query_id', ''),
+                'district_name': row.get('district_name', ''),
+                'tag_key': row.get('tag_key', ''),
+                'tag_value': row.get('tag_value', ''),
+                'overpass_ql': (
+                    f'[out:json][timeout:25];area["name"="{row.get("district_name", "")}"]->.searchArea;'
+                    f'(nwr["{row.get("tag_key", "")}"="{row.get("tag_value", "")}"](area.searchArea););'
+                    f'out center tags qt {capture_limit or 200};'
+                ),
+            }
+            for row in relevant_queries
+        ],
+    }
+
+
+def build_generic_staged_execution_contract(
+    source_spec: dict[str, Any],
+    connector_row: dict[str, str],
+) -> dict[str, Any]:
+    request_method = source_spec.get('request_method', '')
+    request_params = source_spec.get('request_params', {})
+    operator_steps = source_spec.get('operator_steps', [])
+    credential_state = connector_row.get('credential_state', '')
+    reference_url = connector_row.get('url', '')
+    if not any([request_method, request_params, operator_steps, credential_state, reference_url]):
+        return {}
+    return {
+        'request_method': request_method,
+        'credential_state': credential_state,
+        'reference_url': reference_url,
+        'request_params': request_params,
+        'operator_steps': operator_steps,
+    }
+
+
+def build_staged_execution_contract(
+    adapter_type: str,
+    relevant_queries: list[dict[str, str]],
+    source_spec: dict[str, Any],
+    connector_row: dict[str, str],
+) -> dict[str, Any]:
+    if adapter_type == 'places_api_search':
+        return build_places_execution_contract(relevant_queries, source_spec, connector_row)
+    if adapter_type == 'overpass_query':
+        return build_overpass_execution_contract(relevant_queries, source_spec, connector_row)
+    return build_generic_staged_execution_contract(source_spec, connector_row)
+
+
 def stage_query_request_spec(
     manifest_row: dict[str, str],
     adapter_row: dict[str, str],
@@ -5123,6 +5278,7 @@ def stage_query_request_spec(
     query_rows = load_csv_rows(query_seed_path) if query_seed_path and query_seed_path.is_file() else []
     connector_rows = load_existing_rows_by_key(plans_dir / 'connector_readiness.csv', 'source_id')
     connector_row = connector_rows.get(manifest_row.get('source_id', ''), {})
+    source_spec_path, source_spec = load_source_spec(plans_dir, manifest_row.get('source_id', ''))
     district_scope = manifest_row.get('district_scope', '')
     district_names = {value.strip() for value in district_scope.split(';') if value.strip()}
     relevant_queries = [
@@ -5131,6 +5287,12 @@ def stage_query_request_spec(
         if row.get('district_name', '').strip() in district_names
         or row.get('country', '').strip() in district_names
     ]
+    execution_contract = build_staged_execution_contract(
+        manifest_row.get('adapter_type', ''),
+        relevant_queries,
+        source_spec,
+        connector_row,
+    )
     payload = {
         'run_id': manifest_row.get('run_id', ''),
         'source_id': manifest_row.get('source_id', ''),
@@ -5138,6 +5300,13 @@ def stage_query_request_spec(
         'adapter_type': manifest_row.get('adapter_type', ''),
         'district_scope': district_scope,
         'query_seed_file': adapter_row.get('query_seed_file', ''),
+        'query_seed_path': str(query_seed_path) if query_seed_path else '',
+        'source_spec_path': str(source_spec_path) if source_spec_path else '',
+        'request_method': source_spec.get('request_method', ''),
+        'extraction_targets': source_spec.get('extraction_targets', []),
+        'raw_path_template': source_spec.get('raw_path_template', ''),
+        'normalized_path_template': source_spec.get('normalized_path_template', ''),
+        'quality_checks': source_spec.get('quality_checks', []),
         'query_count': len(query_rows),
         'matched_query_count': len(relevant_queries),
         'connector_status': connector_row.get('status', ''),
@@ -5147,6 +5316,7 @@ def stage_query_request_spec(
         'connector_next_action': connector_row.get('next_action', ''),
         'connector_notes': connector_row.get('notes', ''),
         'connector_url': connector_row.get('url', ''),
+        'execution_contract': execution_contract,
         'queries': relevant_queries,
         'status': 'awaiting_external_execution',
     }
@@ -5157,8 +5327,11 @@ def stage_query_request_spec(
         'content_type': 'application/json',
         'bytes_written': len(raw_path.read_bytes()),
         'checksum_sha256': hashlib.sha256(raw_path.read_bytes()).hexdigest(),
+        'district_scope': district_scope,
         'query_count': len(query_rows),
         'matched_queries': len(relevant_queries),
+        'queries': relevant_queries,
+        'query_seed_path': str(query_seed_path) if query_seed_path else '',
         'connector_status': connector_row.get('status', ''),
         'credential_state': connector_row.get('credential_state', ''),
         'connector_priority': connector_row.get('priority', ''),
@@ -5166,6 +5339,13 @@ def stage_query_request_spec(
         'connector_next_action': connector_row.get('next_action', ''),
         'connector_notes': connector_row.get('notes', ''),
         'connector_url': connector_row.get('url', ''),
+        'source_spec_path': str(source_spec_path) if source_spec_path else '',
+        'request_method': source_spec.get('request_method', ''),
+        'extraction_targets': source_spec.get('extraction_targets', []),
+        'raw_path_template': source_spec.get('raw_path_template', ''),
+        'normalized_path_template': source_spec.get('normalized_path_template', ''),
+        'quality_checks': source_spec.get('quality_checks', []),
+        'execution_contract': execution_contract,
     }
 
 
@@ -5323,9 +5503,19 @@ def process_collection_run(
         normalized_payload.update(
             {
                 'capture_status': 'staged_external',
+                'district_scope': fetch_meta.get('district_scope', manifest_row.get('district_scope', '')),
                 'query_seed_file': adapter_row.get('query_seed_file', ''),
+                'query_seed_path': fetch_meta.get('query_seed_path', ''),
+                'source_spec_path': fetch_meta.get('source_spec_path', ''),
+                'request_method': fetch_meta.get('request_method', ''),
+                'extraction_targets': fetch_meta.get('extraction_targets', []),
+                'raw_path_template': fetch_meta.get('raw_path_template', ''),
+                'normalized_path_template': fetch_meta.get('normalized_path_template', ''),
+                'quality_checks': fetch_meta.get('quality_checks', []),
+                'execution_contract': fetch_meta.get('execution_contract', {}),
                 'query_count': fetch_meta.get('query_count', 0),
                 'matched_queries': fetch_meta.get('matched_queries', 0),
+                'queries': fetch_meta.get('queries', []),
                 'connector_status': fetch_meta.get('connector_status', ''),
                 'credential_state': fetch_meta.get('credential_state', ''),
                 'connector_priority': fetch_meta.get('connector_priority', ''),

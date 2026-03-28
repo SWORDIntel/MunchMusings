@@ -35,6 +35,24 @@ class BootstrapTests(unittest.TestCase):
             'current',
         )
 
+    def test_soften_nonblocking_recency_downgrades_tier2_humanitarian_feed(self) -> None:
+        record = {
+            'source_family': 'humanitarian_feed',
+            'priority_tier': 'tier2',
+        }
+        self.assertEqual(
+            bootstrap.soften_nonblocking_recency(record, 'due_now'),
+            'manual_review',
+        )
+        self.assertEqual(
+            bootstrap.soften_nonblocking_recency(record, 'overdue'),
+            'manual_review',
+        )
+        self.assertEqual(
+            bootstrap.soften_nonblocking_recency(record, 'current'),
+            'current',
+        )
+
     def test_unhcr_egypt_sudan_emergency_update_matches_arrivals_title(self) -> None:
         self.assertTrue(
             bootstrap.unhcr_document_title_match(
@@ -3132,9 +3150,13 @@ class BootstrapTests(unittest.TestCase):
             collection_dir = tmp_path / 'collection'
             raw_dir = collection_dir / 'raw' / 'seed-13'
             normalized_dir = collection_dir / 'normalized'
+            plans_dir = tmp_path / 'plans'
+            source_specs_dir = plans_dir / 'source_specs'
             collection_dir.mkdir(parents=True, exist_ok=True)
             raw_dir.mkdir(parents=True, exist_ok=True)
             normalized_dir.mkdir(parents=True, exist_ok=True)
+            plans_dir.mkdir(parents=True, exist_ok=True)
+            source_specs_dir.mkdir(parents=True, exist_ok=True)
 
             (collection_dir / 'source-adapter-registry.csv').write_text(
                 '\n'.join(
@@ -3154,12 +3176,44 @@ class BootstrapTests(unittest.TestCase):
                 )
                 + '\n'
             )
+            (plans_dir / 'connector_readiness.csv').write_text(
+                '\n'.join(
+                    [
+                        'connector_id,status,priority,owner,source_id,source_name,adapter_type,region_or_country,query_seed_file,credential_state,last_checked_utc,next_action,notes,url',
+                        'CON-013,ready,low,proxy_accountant,seed-13,Google Maps billing guidance,manual_capture,Regional,,public_endpoint,,Review billing and quota controls before enabling Places collection.,Operational safeguard to keep API use controlled and auditable.,https://developers.google.com/maps/billing-and-pricing/manage-costs',
+                    ]
+                )
+                + '\n'
+            )
+            (source_specs_dir / 'google_maps_billing_guidance_capture.json').write_text(
+                json.dumps(
+                    {
+                        'source_id': 'seed-13',
+                        'source_name': 'Google Maps billing guidance',
+                        'adapter_type': 'manual_capture',
+                        'request_method': 'GET',
+                        'request_params': {
+                            'page_url': 'https://developers.google.com/maps/billing-and-pricing/manage-costs',
+                            'capture_mode': 'manual_page_review',
+                        },
+                        'operator_steps': [
+                            'Capture the current pricing and quota-control page.',
+                            'Record any cost-control recommendations that constrain Places collection.',
+                        ],
+                        'extraction_targets': ['billing controls', 'quota guidance', 'field-mask guidance'],
+                        'raw_path_template': 'artifacts/collection/raw/seed-13/manual_capture/<run_id>.json',
+                        'normalized_path_template': 'artifacts/collection/normalized/seed-13.json',
+                        'quality_checks': ['Keep this source in a supporting operational role only.'],
+                    }
+                )
+                + '\n'
+            )
             args = argparse.Namespace(
                 input=str(self.seed_path),
                 output_dir=str(tmp_path / 'artifacts'),
                 docs_csv=str(tmp_path / 'source-registry.csv'),
                 pack_dir=str(tmp_path / 'v0_1'),
-                plans_dir=str(tmp_path / 'plans'),
+                plans_dir=str(plans_dir),
                 collection_dir=str(collection_dir),
                 briefing_dir=str(tmp_path / 'briefings'),
                 zone_name='Cairo/Giza pilot',
@@ -3179,6 +3233,25 @@ class BootstrapTests(unittest.TestCase):
             payload = json.loads((normalized_dir / 'seed-13.json').read_text())
             self.assertEqual(payload['capture_status'], 'staged_external')
             self.assertEqual(payload['query_count'], 0)
+            self.assertEqual(payload['connector_status'], 'ready')
+            self.assertEqual(payload['credential_state'], 'public_endpoint')
+            self.assertEqual(payload['request_method'], 'GET')
+            self.assertTrue(payload['source_spec_path'].endswith('google_maps_billing_guidance_capture.json'))
+            self.assertEqual(payload['execution_contract']['request_method'], 'GET')
+            self.assertEqual(
+                payload['execution_contract']['reference_url'],
+                'https://developers.google.com/maps/billing-and-pricing/manage-costs',
+            )
+            self.assertEqual(
+                payload['execution_contract']['request_params']['capture_mode'],
+                'manual_page_review',
+            )
+            raw_payload = json.loads(Path(payload['raw_path']).read_text())
+            self.assertEqual(raw_payload['connector_status'], 'ready')
+            self.assertEqual(raw_payload['credential_state'], 'public_endpoint')
+            self.assertEqual(raw_payload['request_method'], 'GET')
+            self.assertTrue(raw_payload['source_spec_path'].endswith('google_maps_billing_guidance_capture.json'))
+            self.assertEqual(raw_payload['execution_contract']['request_method'], 'GET')
 
     def test_collect_ready_action_matches_place_queries_to_district_scope(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3187,10 +3260,12 @@ class BootstrapTests(unittest.TestCase):
             raw_dir = collection_dir / 'raw' / 'seed-11'
             normalized_dir = collection_dir / 'normalized'
             plans_dir = tmp_path / 'plans'
+            source_specs_dir = plans_dir / 'source_specs'
             collection_dir.mkdir(parents=True, exist_ok=True)
             raw_dir.mkdir(parents=True, exist_ok=True)
             normalized_dir.mkdir(parents=True, exist_ok=True)
             plans_dir.mkdir(parents=True, exist_ok=True)
+            source_specs_dir.mkdir(parents=True, exist_ok=True)
 
             (collection_dir / 'places-query-seeds.csv').write_text(
                 '\n'.join(
@@ -3230,6 +3305,25 @@ class BootstrapTests(unittest.TestCase):
                 )
                 + '\n'
             )
+            (source_specs_dir / 'google_places_cairo_giza_collection.json').write_text(
+                json.dumps(
+                    {
+                        'source_id': 'seed-11',
+                        'source_name': 'Google Places API',
+                        'adapter_type': 'places_api_search',
+                        'request_method': 'POST',
+                        'request_params': {
+                            'fields': ['place_id', 'name', 'formatted_address'],
+                            'capture_limit': 50,
+                        },
+                        'extraction_targets': ['place_id', 'name'],
+                        'raw_path_template': 'artifacts/collection/raw/seed-11/google_places/<run_id>.json',
+                        'normalized_path_template': 'artifacts/collection/normalized/seed-11.json',
+                        'quality_checks': ['Limit fields to the minimum useful set.'],
+                    }
+                )
+                + '\n'
+            )
             args = argparse.Namespace(
                 input=str(self.seed_path),
                 output_dir=str(tmp_path / 'artifacts'),
@@ -3256,9 +3350,17 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['capture_status'], 'staged_external')
             self.assertEqual(payload['query_count'], 3)
             self.assertEqual(payload['matched_queries'], 2)
+            self.assertEqual(payload['district_scope'], 'Nasr City; Imbaba')
             self.assertEqual(payload['connector_status'], 'needs_credentials')
             self.assertEqual(payload['credential_state'], 'api_key_required')
             self.assertEqual(payload['connector_owner'], 'proxy_accountant')
+            self.assertEqual(payload['request_method'], 'POST')
+            self.assertTrue(payload['query_seed_path'].endswith('collection/places-query-seeds.csv'))
+            self.assertTrue(payload['source_spec_path'].endswith('google_places_cairo_giza_collection.json'))
+            self.assertEqual(payload['execution_contract']['search_endpoint'], 'https://places.googleapis.com/v1/places:searchText')
+            self.assertEqual(payload['execution_contract']['credential_state'], 'api_key_required')
+            self.assertEqual(len(payload['execution_contract']['per_query_requests']), 2)
+            self.assertEqual(len(payload['queries']), 2)
             raw_payload = json.loads((raw_dir / 'run-seed-11.json').read_text())
             self.assertEqual(raw_payload['matched_query_count'], 2)
             self.assertEqual(len(raw_payload['queries']), 2)
@@ -3267,6 +3369,126 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(raw_payload['credential_state'], 'api_key_required')
             self.assertEqual(raw_payload['connector_owner'], 'proxy_accountant')
             self.assertEqual(raw_payload['connector_next_action'], 'Configure an API key')
+            self.assertEqual(raw_payload['request_method'], 'POST')
+            self.assertTrue(raw_payload['source_spec_path'].endswith('google_places_cairo_giza_collection.json'))
+            self.assertEqual(raw_payload['execution_contract']['search_endpoint'], 'https://places.googleapis.com/v1/places:searchText')
+            self.assertEqual(raw_payload['execution_contract']['credential_state'], 'api_key_required')
+
+    def test_collect_ready_action_stages_overpass_turbo_with_source_spec_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-17'
+            normalized_dir = collection_dir / 'normalized'
+            plans_dir = tmp_path / 'plans'
+            source_specs_dir = plans_dir / 'source_specs'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+            plans_dir.mkdir(parents=True, exist_ok=True)
+            source_specs_dir.mkdir(parents=True, exist_ok=True)
+
+            (collection_dir / 'overpass-query-seeds.csv').write_text(
+                '\n'.join(
+                    [
+                        'query_id,country,district_name,place_source,place_type,tag_key,tag_value,query_text,priority,status,notes',
+                        'ovp-001,Egypt,Nasr City,Overpass,bakery,shop,bakery,shop=bakery in Nasr City,high,ready,Fixture row',
+                        'ovp-002,Egypt,Imbaba,Overpass,cafe,amenity,cafe,amenity=cafe in Imbaba,high,ready,Fixture row',
+                        'ovp-003,Lebanon,Beirut,Overpass,bakery,shop,bakery,shop=bakery in Beirut,high,ready,Fixture row',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-17,17,Overpass Turbo,place,tier2,market_proxy,manual_review,overpass_query,web,Regional,as needed,{raw_dir},{normalized_dir / "seed-17.json"},{collection_dir / "evidence-capture-log.csv"},overpass-query-seeds.csv,Overpass Turbo request spec test,https://overpass-turbo.eu/',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-17,seed-17,Overpass Turbo,market_proxy,overpass_query,medium,Nasr City; Imbaba,2026-03-25T00:00:00Z,{normalized_dir / "seed-17.json"},overpass-query-seeds.csv,ready,log_and_escalate,Overpass Turbo query matching test run',
+                    ]
+                )
+                + '\n'
+            )
+            (plans_dir / 'connector_readiness.csv').write_text(
+                '\n'.join(
+                    [
+                        'connector_id,status,priority,owner,source_id,source_name,adapter_type,region_or_country,query_seed_file,credential_state,last_checked_utc,next_action,notes,url',
+                        'CON-017,ready,low,proxy_accountant,seed-17,Overpass Turbo,overpass_query,Regional,overpass-query-seeds.csv,public_endpoint,,Keep Overpass queries bounded and monitor endpoint policy, latency, and query failures.,Use for analyst iteration before automating query packs.,https://overpass-turbo.eu/',
+                    ]
+                )
+                + '\n'
+            )
+            (source_specs_dir / 'overpass_turbo_cairo_giza_collection.json').write_text(
+                json.dumps(
+                    {
+                        'source_id': 'seed-17',
+                        'source_name': 'Overpass Turbo',
+                        'adapter_type': 'overpass_query',
+                        'request_method': 'POST',
+                        'request_params': {
+                            'capture_limit': 200,
+                        },
+                        'extraction_targets': ['overpass_turbo_query', 'osm_id', 'name'],
+                        'raw_path_template': 'artifacts/collection/raw/seed-17/overpass_turbo/<run_id>.json',
+                        'normalized_path_template': 'artifacts/collection/normalized/seed-17.json',
+                        'quality_checks': ['Preserve the analyst query text and exported Turbo link together.'],
+                    }
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(plans_dir),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-17.json').read_text())
+            self.assertEqual(payload['capture_status'], 'staged_external')
+            self.assertEqual(payload['matched_queries'], 2)
+            self.assertEqual(payload['district_scope'], 'Nasr City; Imbaba')
+            self.assertEqual(payload['connector_status'], 'ready')
+            self.assertEqual(payload['credential_state'], 'public_endpoint')
+            self.assertEqual(payload['request_method'], 'POST')
+            self.assertTrue(payload['query_seed_path'].endswith('collection/overpass-query-seeds.csv'))
+            self.assertTrue(payload['source_spec_path'].endswith('overpass_turbo_cairo_giza_collection.json'))
+            self.assertEqual(payload['execution_contract']['interpreter_url'], 'https://overpass-api.de/api/interpreter')
+            self.assertEqual(payload['execution_contract']['credential_state'], 'public_endpoint')
+            self.assertEqual(len(payload['execution_contract']['per_query_requests']), 2)
+            self.assertEqual(len(payload['queries']), 2)
+            raw_payload = json.loads((raw_dir / 'run-seed-17.json').read_text())
+            self.assertEqual(raw_payload['matched_query_count'], 2)
+            self.assertEqual(len(raw_payload['queries']), 2)
+            self.assertEqual({row['district_name'] for row in raw_payload['queries']}, {'Nasr City', 'Imbaba'})
+            self.assertEqual(raw_payload['connector_status'], 'ready')
+            self.assertEqual(raw_payload['credential_state'], 'public_endpoint')
+            self.assertEqual(raw_payload['request_method'], 'POST')
+            self.assertTrue(raw_payload['source_spec_path'].endswith('overpass_turbo_cairo_giza_collection.json'))
+            self.assertEqual(raw_payload['execution_contract']['interpreter_url'], 'https://overpass-api.de/api/interpreter')
+            self.assertEqual(raw_payload['execution_contract']['credential_state'], 'public_endpoint')
 
     def test_recent_accounting_action_syncs_findings_from_normalized_collection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3283,6 +3505,7 @@ class BootstrapTests(unittest.TestCase):
                         'source_name': 'WFP Global Market Monitor',
                         'adapter_type': 'hdx_dataset_metadata',
                         'captured_utc': '2026-03-25T12:00:00Z',
+                        'secondary_raw_path': 'artifacts/collection/raw/seed-27/detail.html',
                         'verification_updates': {
                             'source_id': 'seed-27',
                             'last_checked_utc': '2026-03-25T12:00:00Z',
@@ -3330,8 +3553,10 @@ class BootstrapTests(unittest.TestCase):
 
             self.assertEqual(findings_rows['seed-27']['last_published_date'], '2026-03-20')
             self.assertEqual(findings_rows['seed-27']['mirror_evidence_link'], 'https://example.test/mirror/global-market-monitor')
+            self.assertEqual(findings_rows['seed-27']['evidence_path'], 'artifacts/collection/raw/seed-27/detail.html')
             self.assertEqual(accounting_rows['seed-27']['last_published_date'], '2026-03-20')
             self.assertEqual(accounting_rows['seed-27']['mirror_evidence_link'], 'https://example.test/mirror/global-market-monitor')
+            self.assertEqual(accounting_rows['seed-27']['evidence_path'], 'artifacts/collection/raw/seed-27/detail.html')
             self.assertEqual(accounting_rows['seed-27']['recency_status'], 'current')
 
     def test_brief_zone_ingests_normalized_collection_observations(self) -> None:

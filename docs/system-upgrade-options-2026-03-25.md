@@ -109,7 +109,7 @@ This is the strongest lawful path if the goal is a zone-level output that approa
 
 #### First Build Sequence
 1. Lock one pilot zone: Cairo/Giza only.
-2. Verify the Egypt baseline sources in `plans/recent_accounting.csv`.
+2. Use `plans/recent_accounting.csv` to confirm the Egypt baseline sources remain current, not just seeded.
 3. Populate one event-baseline row with access timestamp and note.
 4. Capture one public-source market observation set for the same districts.
 5. Produce one anomaly card and one claim register row.
@@ -118,3 +118,4 @@ This is the strongest lawful path if the goal is a zone-level output that approa
 #### Immediate Recommendation
 - Do not expand breadth first.
 - Build one Egypt evidence pack that can survive challenge, then clone the pattern to Lebanon or Gaza.
+- The current collection debt is no longer Egypt-baseline verification; it is the remaining Ashdod provenance/access blocker plus staged-external execution quality.

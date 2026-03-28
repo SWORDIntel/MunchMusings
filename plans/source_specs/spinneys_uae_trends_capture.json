@@ -1,0 +1,27 @@
+{
+  "source_id": "seed-19",
+  "source_name": "Spinneys UAE trends",
+  "collection_role": "supporting_proxy",
+  "collection_mode": "manual_review",
+  "adapter_type": "manual_capture",
+  "request_method": "GET",
+  "request_params": {
+    "page_url": "https://www.spinneys.com/en-ae/lifestyle/top-trends-2025/",
+    "capture_mode": "manual_page_review"
+  },
+  "operator_steps": [
+    "Capture the current Spinneys trend page.",
+    "Record the visible publication date and named retail themes."
+  ],
+  "extraction_targets": [
+    "publication date",
+    "retail trend labels",
+    "quoted product or category claims"
+  ],
+  "raw_path_template": "artifacts/collection/raw/seed-19/manual_capture/<run_id>.json",
+  "normalized_path_template": "artifacts/collection/normalized/seed-19.json",
+  "quality_checks": [
+    "Use only as weak corroboration.",
+    "Separate retailer marketing narrative from stronger market evidence."
+  ]
+}

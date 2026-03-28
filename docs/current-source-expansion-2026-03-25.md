@@ -78,4 +78,4 @@ The seeded source stack was expanded from 20 to 34 sources to improve current-so
 
 ## Remaining gap
 
-The new sources are seeded and scheduled, but most of them are still `unknown` in `plans/recent_accounting.csv` until their latest publication dates are verified and captured into the ledger.
+The new sources are now largely verified and integrated into `plans/recent_accounting.csv`. The active recent-accounting queue is down to a single source-level blocker, `ACC-RA-033`, where the official Ashdod hub remains the primary source but the latest collectible publication still depends on a secondary mirror when the hub is blocked.
