@@ -247,7 +247,7 @@ Use these when more detail is needed:
 
 1. Use this file as the primary runbook.
 2. Run the launcher in CLI, TUI, GUI, check, or inspect mode depending on task.
-3. Treat `plans/work_queue.csv` and `plans/collection_runbook.md` as the primary operator surface for staged external work, with `plans/connector_readiness.csv` as the synced status sheet behind it.
+3. Treat `plans/work_queue.md`, `plans/work_queue.csv`, and `plans/collection_runbook.md` as the primary operator surface for staged external work, with `plans/connector_readiness.csv` as the synced status sheet behind it.
 4. Use the wrapper resume flow (`python scripts/run_operating_cycle.py --resume-latest` or `python bootstrap.py --operating-cycle --resume-latest`) instead of manually restarting interrupted cycles.
 5. Keep the seeded registry current and treat trend/lifestyle sources as supporting evidence only.
 6. Run the stdlib test suite before future launcher changes.

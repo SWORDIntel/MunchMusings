@@ -54,7 +54,8 @@ Use only:
 
 ### Current operator workflow
 When a source stages instead of collecting directly:
-- start with the matching `EXT-*` row in `plans/work_queue.csv`,
+- start with `plans/work_queue.md` for the active staged queue summary,
+- then open the matching `EXT-*` row in `plans/work_queue.csv`,
 - inspect the normalized staged contract in `artifacts/collection/normalized/<source_id>.json`,
 - check `plans/connector_readiness.csv`,
 - inspect the staged raw contract in `artifacts/collection/raw/<source_id>/run-*.json`,

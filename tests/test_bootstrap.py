@@ -85,6 +85,44 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(result['action'], 'check')
         self.assertEqual(result['source_summary']['total_sources'], 34)
 
+    def test_work_queue_summary_action_returns_rendered_queue_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            plans_dir = tmp_path / 'plans'
+            plans_dir.mkdir(parents=True, exist_ok=True)
+            (plans_dir / 'work_queue.csv').write_text(
+                '\n'.join(
+                    [
+                        'task_id,status,priority,agent,region,source_id,artifact,source_spec_path,request_method,connector_status,credential_state,query_seed_path,district_scope,query_count,target_date,depends_on,next_action,acceptance_criteria',
+                        'EXT-012,pending,high,proxy_accountant,Regional,seed-12,artifacts/collection/normalized/seed-12.json,plans/source_specs/overpass_cairo_giza_collection.json,POST,ready,public_endpoint,artifacts/collection/overpass-query-seeds.csv,Imbaba; Shubra,2,2026-03-28,,Keep Overpass queries bounded and monitor endpoint policy, latency, and query failures.,Overpass contract',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir='artifacts/bootstrap',
+                docs_csv='docs/source-registry.csv',
+                pack_dir='artifacts/v0_1',
+                plans_dir=str(plans_dir),
+                collection_dir='artifacts/collection',
+                briefing_dir='artifacts/briefings',
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+            result = bootstrap.execute_action(args, action='work_queue_summary')
+            self.assertEqual(result['status'], 'ok')
+            self.assertEqual(result['action'], 'work_queue_summary')
+            self.assertIn('# Work Queue', result['summary_text'])
+            self.assertIn('EXT-012', result['summary_text'])
+
     def test_render_tui_dashboard_shows_cycle_resume_context(self) -> None:
         args = argparse.Namespace(
             input=str(self.seed_path),
@@ -106,6 +144,11 @@ class BootstrapTests(unittest.TestCase):
                     'status': 'blocked',
                     'source_id': 'seed-11',
                     'next_action': 'Configure a bounded API key, quota limits, and field masks before live collection.',
+                    'connector_status': 'needs_credentials',
+                    'credential_state': 'api_key_required',
+                    'request_method': 'POST',
+                    'source_spec_path': 'plans/source_specs/google_places_cairo_giza_collection.json',
+                    'query_count': '24',
                 },
                 {
                     'task_id': 'ACC-RA-033',
@@ -132,7 +175,10 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('Work queue: in_progress=0 | blocked=1 | pending=2 | completed=0', rendered)
         self.assertIn('Active queue:', rendered)
         self.assertIn('EXT-011 | blocked | seed-11', rendered)
+        self.assertIn('needs_credentials/api_key_required | queries=24 | method=POST', rendered)
         self.assertIn('ACC-RA-033 | pending | seed-33', rendered)
+        self.assertIn('10) View work queue summary', rendered)
+        self.assertIn('14) Exit', rendered)
 
     def test_render_tui_preflight_shows_operating_cycle_resume_flags(self) -> None:
         args = argparse.Namespace(

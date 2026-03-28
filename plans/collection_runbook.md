@@ -5,6 +5,7 @@ Define the minimum operating sequence for a lawful public-source collection cycl
 
 ## Inputs
 - `plans/recent_accounting.csv`
+- `plans/work_queue.md`
 - `plans/work_queue.csv`
 - `plans/connector_readiness.csv`
 - `plans/source_specs/*.json`
@@ -20,19 +21,20 @@ Define the minimum operating sequence for a lawful public-source collection cycl
 3. Run `python bootstrap.py --collect-ready --max-runs <n>` against only the current `ready` rows.
 4. Separate results into `completed` and `staged_external` paths before doing anything else.
 5. For `completed` rows, confirm raw outputs in `artifacts/collection/raw/<source_id>/` and normalized outputs in `artifacts/collection/normalized/`.
-6. For `staged_external` rows, use the matching `EXT-*` task in `plans/work_queue.csv` as the operator action surface and the staged normalized/raw contracts as the execution surface.
+6. For `staged_external` rows, start with `plans/work_queue.md` for the active summary, then use the matching `EXT-*` task in `plans/work_queue.csv` as the row-level operator action surface and the staged normalized/raw contracts as the execution surface.
 7. Re-run `python bootstrap.py --verification-sprint` after external collection state changes; it refreshes recent accounting, finalizes completed external captures, and rebuilds the queue.
 8. Feed verified observations into the briefing pack only after freshness, provenance, and any completed external captures are synced.
 
 ## Staged External Procedure
-1. Start with the matching `EXT-*` task in `plans/work_queue.csv`.
-2. Read the `next_action` on that `EXT-*` row first; it should tell you whether the task is credential-blocked, query-ready, manual-capture only, or browser-export only.
-3. Use the same `EXT-*` row to confirm the staged `source_spec_path`, `request_method`, connector state, and any query context already surfaced into the queue.
-4. Open the staged normalized artifact referenced by that `EXT-*` row in `artifacts/collection/normalized/<source_id>.json` when you need the full contract payload.
-5. Use `plans/connector_readiness.csv` to confirm the synced connector state and any supporting notes.
-6. Open the staged raw artifact in `artifacts/collection/raw/<source_id>/` when you need the exact request payload or capture surface.
-7. Treat the staged raw artifact as the authoritative execution contract for that run.
-8. Confirm the matching source spec in `plans/source_specs/` for path templates, extraction targets, quality checks, and operator steps.
+1. Start with `plans/work_queue.md` to identify the active staged-external tasks.
+2. Open the matching `EXT-*` task in `plans/work_queue.csv`.
+3. Read the `next_action` on that `EXT-*` row first; it should tell you whether the task is credential-blocked, query-ready, manual-capture only, or browser-export only.
+4. Use the same `EXT-*` row to confirm the staged `source_spec_path`, `request_method`, connector state, and any query context already surfaced into the queue.
+5. Open the staged normalized artifact referenced by that `EXT-*` row in `artifacts/collection/normalized/<source_id>.json` when you need the full contract payload.
+6. Use `plans/connector_readiness.csv` to confirm the synced connector state and any supporting notes.
+7. Open the staged raw artifact in `artifacts/collection/raw/<source_id>/` when you need the exact request payload or capture surface.
+8. Treat the staged raw artifact as the authoritative execution contract for that run.
+9. Confirm the matching source spec in `plans/source_specs/` for path templates, extraction targets, quality checks, and operator steps.
 
 ## Contract Fields To Read
 - Query-driven rows: `district_scope`, `query_seed_file`, `query_seed_path`, `queries`, `execution_contract`, `connector_status`, `credential_state`

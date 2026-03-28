@@ -6505,6 +6505,20 @@ def execute_action(
             'launcher_mode': getattr(args, 'launcher_mode', 'cli'),
         }
 
+    if action == 'work_queue_summary':
+        queue_path = Path(args.plans_dir) / 'work_queue.csv'
+        summary_path = Path(args.plans_dir) / 'work_queue.md'
+        queue_rows = load_csv_rows(queue_path)
+        return {
+            'status': 'ok',
+            'action': 'work_queue_summary',
+            'input': str(input_path),
+            'work_queue_csv': str(queue_path),
+            'work_queue_summary': str(summary_path),
+            'summary_text': render_work_queue_summary(queue_rows),
+            'launcher_mode': getattr(args, 'launcher_mode', 'cli'),
+        }
+
     if action == 'check':
         total_steps = 3
         emit_progress(progress_callback, 1, total_steps, 'Loading canonical seed file')
@@ -6770,6 +6784,27 @@ def truncate_console_text(value: str, limit: int = 88) -> str:
     return value[: limit - 3].rstrip() + '...'
 
 
+def render_tui_queue_highlight(row: dict[str, Any]) -> list[str]:
+    task_id = row.get('task_id', 'unknown')
+    status = row.get('status', 'unknown')
+    source_id = row.get('source_id', '') or '-'
+    next_action = truncate_console_text(row.get('next_action', ''))
+    lines = [f"- {task_id} | {status} | {source_id} | {next_action}"]
+    if task_id.startswith('EXT-'):
+        detail_parts = []
+        if row.get('connector_status') or row.get('credential_state'):
+            detail_parts.append(f"{row.get('connector_status', '')}/{row.get('credential_state', '')}".strip('/'))
+        if row.get('query_count'):
+            detail_parts.append(f"queries={row.get('query_count')}")
+        if row.get('request_method'):
+            detail_parts.append(f"method={row.get('request_method')}")
+        if row.get('source_spec_path'):
+            detail_parts.append(truncate_console_text(row.get('source_spec_path', ''), 48))
+        if detail_parts:
+            lines.append(f"  {' | '.join(part for part in detail_parts if part)}")
+    return lines
+
+
 def render_tui_dashboard(args: argparse.Namespace, snapshot: dict[str, Any], last_summary: dict[str, Any] | None = None) -> str:
     cycle = snapshot.get('latest_cycle', {})
     cycle_line = 'Latest cycle: none'
@@ -6808,11 +6843,7 @@ def render_tui_dashboard(args: argparse.Namespace, snapshot: dict[str, Any], las
     if queue_highlights:
         lines.append('Active queue:')
         for row in queue_highlights:
-            task_id = row.get('task_id', 'unknown')
-            status = row.get('status', 'unknown')
-            source_id = row.get('source_id', '') or '-'
-            next_action = truncate_console_text(row.get('next_action', ''))
-            lines.append(f"- {task_id} | {status} | {source_id} | {next_action}")
+            lines.extend(render_tui_queue_highlight(row))
     lines.extend(
         [
             '',
@@ -6825,10 +6856,11 @@ def render_tui_dashboard(args: argparse.Namespace, snapshot: dict[str, Any], las
             '7) Build v0.1 operator pack',
             '8) Bootstrap source registry',
             '9) View source summary',
-            '10) Validate seed only',
-            '11) Edit settings',
-            '12) Refresh dashboard',
-            '13) Exit',
+            '10) View work queue summary',
+            '11) Validate seed only',
+            '12) Edit settings',
+            '13) Refresh dashboard',
+            '14) Exit',
         ]
     )
     return '\n'.join(lines)
@@ -6899,7 +6931,8 @@ def launch_tui(args: argparse.Namespace) -> int:
         '7': 'scaffold_v0',
         '8': 'bootstrap',
         '9': 'inspect',
-        '10': 'check',
+        '10': 'work_queue_summary',
+        '11': 'check',
     }
     write_actions = {'operating_cycle', 'collect_ready', 'verification_sprint', 'brief_zone', 'recent_accounting', 'scaffold_collection', 'scaffold_v0', 'bootstrap'}
 
@@ -6908,14 +6941,14 @@ def launch_tui(args: argparse.Namespace) -> int:
         print(render_tui_dashboard(args, snapshot, last_summary))
         selection = input('Select option [1]: ').strip() or '1'
 
-        if selection == '13':
+        if selection == '14':
             print('Exiting console.')
             return 0
-        if selection == '11':
+        if selection == '12':
             args = prompt_tui_settings(args)
             last_summary = {'action': 'edit_settings', 'status': 'ok'}
             continue
-        if selection == '12':
+        if selection == '13':
             last_summary = {'action': 'refresh_dashboard', 'status': 'ok'}
             continue
         if selection not in action_map:
@@ -6934,7 +6967,7 @@ def launch_tui(args: argparse.Namespace) -> int:
             configure_logging(args.verbose)
             summary = execute_action(args, action=action)
             last_summary = summary
-            if action == 'inspect':
+            if action in {'inspect', 'work_queue_summary'}:
                 print('\n' + summary['summary_text'])
             else:
                 print('\n' + json.dumps(summary, indent=2))
@@ -7092,7 +7125,7 @@ def launch_gui(args: argparse.Namespace) -> int:
                     status_var.set(message)
                 elif event == 'done':
                     status_var.set('Completed successfully')
-                    if payload.get('action') == 'inspect':
+                    if payload.get('action') in {'inspect', 'work_queue_summary'}:
                         append_output(payload['summary_text'])
                     else:
                         append_output(json.dumps(payload, indent=2))
