@@ -47,6 +47,8 @@ Common overrides:
 python scripts/run_operating_cycle.py --max-runs 10
 python scripts/run_operating_cycle.py --zone-name "Cairo/Giza pilot" --zone-country Egypt
 python scripts/run_operating_cycle.py --python python3
+python scripts/run_operating_cycle.py --resume-latest
+python scripts/run_operating_cycle.py --resume-cycle-dir artifacts/operating-cycles/20260328T120000Z
 ```
 
 Dry-run mode is available when you only want the manifest skeleton and command list:
@@ -54,3 +56,17 @@ Dry-run mode is available when you only want the manifest skeleton and command l
 ```bash
 python scripts/run_operating_cycle.py --dry-run
 ```
+
+The wrapper can resume interrupted work:
+
+- `--resume-latest` reopens the latest incomplete cycle whose planned commands still match the current invocation.
+- `--resume-cycle-dir <dir>` resumes a specific dated cycle directory.
+- The resume cursor is stored in the cycle's `run-manifest.json`, so the wrapper restarts from the next incomplete step rather than rerunning the full cycle.
+
+The same wrapper surface is now available through `bootstrap.py --operating-cycle` with:
+
+- `--cycle-root`
+- `--resume-cycle-dir`
+- `--resume-latest`
+- `--dry-run-cycle`
+- `--cycle-dashboard`

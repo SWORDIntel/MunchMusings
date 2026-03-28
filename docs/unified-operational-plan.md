@@ -230,7 +230,7 @@ Only consider heavier local-model work after a labeled review set exists.
 4. Select monitoring and control districts.
 5. Collect only compliant public signals.
 6. If collection leaves rows in `staged_external`, start with the matching `EXT-*` row in `plans/work_queue.csv`, open the staged normalized contract it references, then use `plans/connector_readiness.csv`, the staged raw spec under `artifacts/collection/raw/`, and the linked `plans/source_specs/*.json` contract as supporting execution detail.
-7. Rerun `python bootstrap.py --recent-accounting` and `python bootstrap.py --verification-sprint` after staged external execution.
+7. Rerun `python bootstrap.py --verification-sprint` after staged external execution; it now refreshes recent accounting, finalizes completed external captures, and rebuilds the queue.
 8. Score anomalies and record confounds.
 9. Publish only after the minimum validation rule is satisfied.
 
@@ -248,6 +248,7 @@ Use these when more detail is needed:
 1. Use this file as the primary runbook.
 2. Run the launcher in CLI, TUI, GUI, check, or inspect mode depending on task.
 3. Treat `plans/work_queue.csv` and `plans/collection_runbook.md` as the primary operator surface for staged external work, with `plans/connector_readiness.csv` as the synced status sheet behind it.
-4. Keep the seeded registry current and treat trend/lifestyle sources as supporting evidence only.
-5. Run the stdlib test suite before future launcher changes.
-6. Keep `seed-33` honest as an access/freshness blocker until the official source surface improves.
+4. Use the wrapper resume flow (`python scripts/run_operating_cycle.py --resume-latest` or `python bootstrap.py --operating-cycle --resume-latest`) instead of manually restarting interrupted cycles.
+5. Keep the seeded registry current and treat trend/lifestyle sources as supporting evidence only.
+6. Run the stdlib test suite before future launcher changes.
+7. Keep `seed-33` honest as an access/freshness blocker until the official source surface improves.

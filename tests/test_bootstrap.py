@@ -1208,6 +1208,11 @@ class BootstrapTests(unittest.TestCase):
                 force_version=1,
                 verbose=False,
                 launcher_mode='cli',
+                cycle_root='artifacts/operating-cycles',
+                resume_cycle_dir='',
+                resume_latest=False,
+                dry_run_cycle=False,
+                cycle_dashboard=False,
             )
 
             with patch.object(bootstrap, '__file__', str(tmp_path / 'bootstrap.py')):
@@ -1274,6 +1279,70 @@ class BootstrapTests(unittest.TestCase):
             invoked = mocked_run.call_args.args[0]
             self.assertIn('--max-runs', invoked)
             self.assertIn('7', invoked)
+
+    def test_operating_cycle_action_passes_resume_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            (tmp_path / 'scripts').mkdir(parents=True, exist_ok=True)
+            (tmp_path / 'scripts' / 'run_operating_cycle.py').write_text('# fixture\n')
+            cycle_root = tmp_path / 'custom-cycles'
+            cycle_manifest = cycle_root / '20260325T000000Z' / 'run-manifest.json'
+            cycle_manifest.parent.mkdir(parents=True, exist_ok=True)
+            cycle_manifest.write_text(
+                json.dumps(
+                    {
+                        'cycle_id': '20260325T000000Z',
+                        'cycle_dir': str(cycle_manifest.parent),
+                        'status': 'failed',
+                        'planned_commands': ['python bootstrap.py --collect-ready'],
+                        'steps': [{'command': 'python bootstrap.py --collect-ready', 'exit_code': 1}],
+                    }
+                )
+                + '\n'
+            )
+
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'bootstrap'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(tmp_path / 'plans'),
+                collection_dir=str(tmp_path / 'collection'),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=7,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+                cycle_root=str(cycle_root),
+                resume_cycle_dir=str(cycle_manifest.parent),
+                resume_latest=True,
+                dry_run_cycle=True,
+                cycle_dashboard=True,
+            )
+
+            class FakeCompletedProcess:
+                def __init__(self) -> None:
+                    self.returncode = 0
+                    self.stdout = 'cycle ok\n'
+                    self.stderr = ''
+
+            with patch.object(bootstrap, '__file__', str(tmp_path / 'bootstrap.py')):
+                with patch.object(bootstrap.subprocess, 'run', return_value=FakeCompletedProcess()) as mocked_run:
+                    bootstrap.execute_action(args, action='operating_cycle')
+
+            invoked = mocked_run.call_args.args[0]
+            self.assertIn('--cycle-root', invoked)
+            self.assertIn(str(cycle_root), invoked)
+            self.assertIn('--resume-cycle-dir', invoked)
+            self.assertIn(str(cycle_manifest.parent), invoked)
+            self.assertIn('--resume-latest', invoked)
+            self.assertIn('--dry-run', invoked)
+            self.assertIn('--dashboard', invoked)
 
     def test_brief_zone_action_writes_zone_pack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

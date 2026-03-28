@@ -100,6 +100,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--verification-sprint', action='store_true', help='Refresh recent-accounting and rebuild the canonical source-verification sprint tracker in plans/.')
     parser.add_argument('--brief-zone', action='store_true', help='Generate a zone-level public-source briefing pack from the current ledgers and manifests.')
     parser.add_argument('--operating-cycle', action='store_true', help='Run collection, verification, and briefing as one dated operating cycle.')
+    parser.add_argument('--cycle-root', default='artifacts/operating-cycles', help='Directory where dated operating-cycle runs will be written.')
+    parser.add_argument('--resume-cycle-dir', default='', help='Existing operating-cycle directory to resume instead of creating a new one.')
+    parser.add_argument('--resume-latest', action='store_true', help='Resume the latest incomplete operating cycle that matches the current command plan.')
+    parser.add_argument('--dry-run-cycle', action='store_true', help='Write the operating-cycle manifest skeleton without executing bootstrap commands.')
+    parser.add_argument('--cycle-dashboard', action='store_true', help='Launch the dashboard alongside the operating-cycle wrapper.')
     parser.add_argument('--zone-name', default='Cairo/Giza pilot', help='Zone name for the generated briefing pack.')
     parser.add_argument('--zone-country', default='Egypt', help='Country label for the generated briefing pack.')
     parser.add_argument('--analyst', default='system', help='Analyst name or ID used in generated briefing packs.')
@@ -6514,7 +6519,7 @@ def execute_action(
         emit_progress(progress_callback, 1, total_steps, 'Preparing operating cycle wrapper')
         repo_root = Path(__file__).resolve().parent
         script_path = repo_root / 'scripts' / 'run_operating_cycle.py'
-        cycle_root = repo_root / 'artifacts' / 'operating-cycles'
+        cycle_root = repo_root / getattr(args, 'cycle_root', 'artifacts/operating-cycles')
         command = [
             sys.executable,
             str(script_path),
@@ -6530,7 +6535,18 @@ def execute_action(
             args.zone_country,
             '--max-runs',
             str(args.max_runs),
+            '--cycle-root',
+            str(cycle_root),
         ]
+        resume_cycle_dir = getattr(args, 'resume_cycle_dir', '')
+        if resume_cycle_dir:
+            command.extend(['--resume-cycle-dir', str(resume_cycle_dir)])
+        if getattr(args, 'resume_latest', False):
+            command.append('--resume-latest')
+        if getattr(args, 'dry_run_cycle', False):
+            command.append('--dry-run')
+        if getattr(args, 'cycle_dashboard', False):
+            command.append('--dashboard')
         emit_progress(progress_callback, 2, total_steps, 'Running collection, verification, and briefing cycle')
         completed = subprocess.run(command, cwd=repo_root, capture_output=True, text=True)
         combined_output = '\n'.join(part for part in [completed.stdout.strip(), completed.stderr.strip()] if part).strip()

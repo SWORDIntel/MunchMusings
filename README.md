@@ -38,6 +38,10 @@ That runs:
 
 and writes a dated run manifest plus log under `artifacts/operating-cycles/`.
 
+Resume support is built in:
+- `python scripts/run_operating_cycle.py --resume-latest`
+- `python scripts/run_operating_cycle.py --resume-cycle-dir artifacts/operating-cycles/<cycle_id>`
+
 The wrapper may legitimately leave some sources in `staged_external`. That is expected when a source needs credentials, a browser export, or manual capture. Treat those rows as queued operator work, not broken automation.
 
 ### Launcher behavior
@@ -53,7 +57,7 @@ The wrapper may legitimately leave some sources in `staged_external`. That is ex
 - **Collection scaffolding mode:** use `--scaffold-collection` to generate the collection pipeline pack in `artifacts/collection/`.
 - **Collection execution mode:** use `--collect-ready` to execute ready direct-source runs, including HDX metadata collectors, and stage query, browser-export, and manual-capture request specs.
 - **Zone briefing mode:** use `--brief-zone` to generate a zone-level public-source briefing pack in `artifacts/briefings/`.
-- **Operating-cycle mode:** use `--operating-cycle` to run collection, verification, and briefing through the dated wrapper from inside `bootstrap.py`.
+- **Operating-cycle mode:** use `--operating-cycle` to run collection, verification, and briefing through the dated wrapper from inside `bootstrap.py`; wrapper flags are also exposed as `--cycle-root`, `--resume-cycle-dir`, `--resume-latest`, `--dry-run-cycle`, and `--cycle-dashboard`.
 
 ## Quick Start
 
@@ -126,6 +130,16 @@ python bootstrap.py --operating-cycle
 ```bash
 # Run the full operating cycle with dated logs
 python scripts/run_operating_cycle.py
+```
+
+```bash
+# Resume the latest interrupted cycle
+python scripts/run_operating_cycle.py --resume-latest
+```
+
+```bash
+# Run the dated wrapper from bootstrap.py with resume support
+python bootstrap.py --operating-cycle --resume-latest
 ```
 
 ## Handling Staged External Runs
