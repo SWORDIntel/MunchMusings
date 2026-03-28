@@ -1,18 +1,18 @@
 # Public-Source Implementation Plan: FMCG / Snack Proxy Signals for Demographic Shift Detection
 
-_Last updated: 2026-03-21 (UTC)._  
+_Last updated: 2026-03-28 (UTC)._  
 _Scope: Egypt, UAE, Saudi Arabia, Lebanon/Syria corridor, and Gaza/OPT as a market-collapse baseline._
 
 ## TIS // Tactical Implementation Spec
 
 ### SITREP
-- **Current State:** The repository had no planning materials beyond a one-line `README.md`, so this plan starts from externally verified, public, and official sources.
+- **Current State:** The repository now has a live launcher, seeded source registry, collection manifest, recent-accounting tracker, source-spec contracts, and staged-external operator handoffs. The main remaining recency blocker is Ashdod (`seed-33`), not missing pipeline scaffolding.
 - **Objective:** Design a legally compliant scraper + analysis framework that uses food-system proxies to detect migration-linked demographic shifts without bypassing geo-fencing, intercepting traffic, evading anti-bot controls, or abusing proxies.
 - **Threat Assessment:** The core risk is analytical overreach, not just collection risk. Cuisine density, menu language, and snack assortment changes are only proxies. They can be distorted by inflation, Ramadan seasonality, tourism, premiumization, platform assortment churn, and chain-expansion strategy.
 
 ### BATTLE PLAN
 - **OBJECTIVE:** Build a public-source pipeline that fuses displacement baselines with food-market and geospatial proxies, then applies explicit confidence rules before any demographic inference.
-- **CURRENT_STATE:** No code or schemas exist yet; the first deliverable should be a source registry and evidence model, not a crawler.
+- **CURRENT_STATE:** The repo already has the source registry, evidence model, collection pipeline, recent-accounting ledger, and staged-external execution contracts. The next value is in keeping source definitions current, preserving provenance, and using the staged contracts operationally.
 - **ACTIONS:**
   1. Stand up a source registry that prioritizes official humanitarian, market, trade, and mapping sources.
   2. Ingest baseline movement data first, then layer food/retail/place signals on top.
@@ -49,7 +49,16 @@ Use only:
 - Public web pages that are accessible without authentication.
 - Public business registry or investor-relations material.
 - Public merchant pages, menus, and retailer catalogue pages where collection volume remains modest and terms-compatible.
+- Explicit staged-external handoffs for query execution, browser export, or manual capture where the repo records the contract and the operator completes the compliant public step.
 - Licensed commercial data only where counsel and procurement approve terms.
+
+### Current operator workflow
+When a source stages instead of collecting directly:
+- check `plans/connector_readiness.csv`,
+- inspect the staged raw contract in `artifacts/collection/raw/<source_id>/run-*.json`,
+- inspect the normalized staged contract in `artifacts/collection/normalized/<source_id>.json`,
+- follow the linked `plans/source_specs/*.json` instructions,
+- then rerun `python bootstrap.py --recent-accounting` and `python bootstrap.py --verification-sprint`.
 
 ### Analytic discipline
 Every claim should be tagged as one of:
@@ -70,7 +79,7 @@ The framework should start with sources that are stable, citable, and defensible
    Use for Egypt refugee counts, country-of-origin splits, monthly factsheets, and Sudan-arrivals updates. As of **28 February 2026**, the portal lists **1,098,750** refugees and asylum-seekers registered with UNHCR Egypt, including **841,477 from Sudan**.
 
 2. **UNHCR regional / Lebanon flash updates and reporting hub**  
-   https://reporting.unhcr.org/lebanon-flash-update  
+   https://data.unhcr.org/en/country/lbn  
    Use for Syria↔Lebanon movement monitoring, returns perceptions, and flash updates tied to the 2024-2026 movement dynamics.
 
 3. **ACAPS Lebanon country analysis**  
@@ -91,13 +100,13 @@ The framework should start with sources that are stable, citable, and defensible
    Use for food insecurity severity, projection windows, and district-level stress context.
 
 7. **WFP Lebanon market and food-system materials**  
-   https://www.wfp.org/publications/retail-and-markets-factsheet-2023  
+   https://www.wfp.org/publications-WFP-Lebanon-Programme-Factsheets-2025  
    https://www.wfp.org/publications/strengthening-government-institutions-inclusive-food-systems-transformation-lebanon  
    Use for retail/market functionality context and food-systems resilience framing.
 
 ### B. Trade, macro-retail, and FMCG baselines
 1. **UN Comtrade / UNSD API catalogue**  
-   https://comtrade.un.org/data/dev/portal/  
+   https://comtradeplus.un.org/DataAvailability  
    https://unstats.un.org/unsd/api/  
    Use for monthly/annual import shifts in ingredients and finished goods: sesame, pistachio, dates, confectionery bases, bakery inputs, tea/coffee categories, sweet biscuits, and savory snacks.
 
@@ -405,10 +414,10 @@ Deliverables:
 ### Milestone 1: Egypt pilot
 Deliverables:
 - Cairo/Giza target district list.
-- UNHCR/IOM baseline ingestion.
-- Google Places + OSM bakery/grocery seed collection.
+- UNHCR/IOM baseline ingestion and freshness verification.
+- Google Places + OSM bakery/grocery staged or direct collection contracts.
 - Menu lexicon v1 for Sudan-linked terms.
-- First anomaly dashboard.
+- First anomaly dashboard or analyst-ready briefing pack.
 
 ### Milestone 2: UAE premiumization track
 Deliverables:
@@ -475,9 +484,9 @@ Start small.
 
 1. Lock the scoring workflow in `docs/confidence-rubric.md` so every anomaly receives a repeatable confidence label.
 2. Finalize the first 20 monitoring districts and their controls using `docs/district-selection-matrix.md`.
-3. Convert Milestone 0 and Milestone 1 into owned tasks using `docs/v0.1-execution-plan.md`.
+3. Keep `plans/connector_readiness.csv` and `plans/collection_runbook.md` aligned with the staged-external operator workflow.
 4. Review and expand `docs/source-registry.csv` with term/licensing notes, district coverage, and owner metadata.
-5. Stand up PostgreSQL + PostGIS schema for the tables listed here.
+5. Stand up PostgreSQL + PostGIS schema for the tables listed here when the evidence loop is stable enough to justify it.
 6. Build a lexicon seed file for Sudanese, Levantine, Egyptian, and Gulf food terms.
 7. Run **Egypt first** as the primary backtest and pilot.
 8. Do not scale platform collection until the two-source confirmation workflow is working.

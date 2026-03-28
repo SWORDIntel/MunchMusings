@@ -1,18 +1,18 @@
 # Unified Operational Plan
 
-_Last updated: 2026-03-22 (UTC)._  
+_Last updated: 2026-03-28 (UTC)._  
 _Purpose: provide one consolidated plan that combines the launcher workflow, preseeded source registry, compliant collection rules, scoring model, district-selection method, automation path, and v0.1 execution roadmap._
 
 ## TIS // Tactical Implementation Spec
 
 ### SITREP
-- **Current State:** The repository now contains a launcher, a canonical top-20 seed, generated JSON/CSV artifacts, and supporting planning documents. The original repo state was only a minimal `README.md`, so planning started from external authoritative sources and public documentation.
+- **Current State:** The repository now contains the launcher, a seeded source registry, generated collection/verification artifacts, staged-external execution contracts, and supporting planning documents. Source accounting is mostly closed, the collection manifest is stable, and `seed-33` is the only live tier-1 recency blocker.
 - **Objective:** Stand up a current, source-driven, legally compliant scraper + analysis framework that can infer migration-linked food signals across Egypt, UAE, Saudi Arabia, and the Levant without violating platform terms or crossing legal/ethical lines.
 - **Threat Assessment:** Some collection patterns are explicitly out of bounds: geo-fencing bypasses, MITM interception, anti-bot circumvention, residential proxy abuse, and authenticated scraping against platform terms. The compliant surface is public APIs, licensed data, public business registries, humanitarian dashboards, investor-relations releases, public retailer catalogues, Google Trends, OSM/Overpass, UN/IOM/UNHCR/OCHA/WFP/IPC/Comtrade, and public merchant pages.
 
 ### BATTLE PLAN
 - **OBJECTIVE:** Build a public-source intelligence pipeline that can detect migration-linked food signals without platform abuse and without over-claiming what food proxies actually mean.
-- **CURRENT_STATE:** The repo now has the bootstrap launcher and seeded source stack, but the operational intent must still be anchored to humanitarian baselines, compliant public collection, and explicit validation rules.
+- **CURRENT_STATE:** The repo now has the bootstrap launcher, seeded source stack, dated operating-cycle wrapper, generated recent-accounting tracker, and staged-external handoff contracts. The operational intent still needs to stay anchored to humanitarian baselines, compliant public collection, and explicit validation rules.
 - **ACTIONS:**
   1. Build and maintain the source registry first.
   2. Start with official/public baselines before platform collection.
@@ -28,8 +28,8 @@ _Purpose: provide one consolidated plan that combines the launcher workflow, pre
 - **Success Validation:** Recover at least three backtest windows: Sudanese arrivals into Egypt after **15 April 2023**, Syria/Lebanon movement dynamics centered on **8 December 2024**, and Gaza market-collapse conditions after **2 March 2025** and **18 March 2025**.
 
 ### SECURITY & COMPLIANCE GATES
-- **Lint/Static:** Not applicable for planning docs; `bootstrap.py` should remain Python-stdlib only and py_compile clean.
-- **CVE Scan:** No third-party packages are required for the launcher; dependency risk is minimized by design.
+- **Lint/Static:** Not applicable for planning docs; `bootstrap.py` should stay `py_compile` clean and the stdlib test suite should stay green.
+- **CVE Scan:** The runtime is intentionally light but not stdlib-only; `bootstrap.py` uses `requests` and the dashboard uses `rich`.
 - **Unsafe patterns avoided:** No MITM guidance, no anti-bot evasion, no proxy abuse, no credential scraping, no person-level inference.
 
 ## 1) Single Entry Point and Automation Modes
@@ -64,7 +64,7 @@ This makes the workflow suitable for:
 - no-write validation checks,
 - source-pack inspection before any write operation.
 
-## 2) Canonical Top-20 Source Stack
+## 2) Seeded Source Stack
 
 The canonical source of truth is `seed/preseed_sources_v1.json`, which is exported to:
 - `artifacts/bootstrap/preseed_sources_vN.json`
@@ -206,7 +206,7 @@ Only consider heavier local-model work after a labeled review set exists.
 - freeze the Egypt district watchlist.
 
 ### Phase 2: Egypt market-proxy collection
-- query Google Places and OSM,
+- stage or execute Google Places and OSM collection through the current connector contracts,
 - capture public merchant/menu signals,
 - produce first anomaly candidates.
 
@@ -226,11 +226,13 @@ Only consider heavier local-model work after a labeled review set exists.
 
 1. Run `python bootstrap.py` or `python bootstrap.py --gui`.
 2. Confirm the output artifacts were created.
-3. Review the top-20 source pack and lock the pilot scope.
+3. Review the seeded source pack and lock the pilot scope.
 4. Select monitoring and control districts.
 5. Collect only compliant public signals.
-6. Score anomalies and record confounds.
-7. Publish only after the minimum validation rule is satisfied.
+6. If collection leaves rows in `staged_external`, use `plans/connector_readiness.csv`, the staged raw spec under `artifacts/collection/raw/`, and the linked `plans/source_specs/*.json` contract to complete the external step.
+7. Rerun `python bootstrap.py --recent-accounting` and `python bootstrap.py --verification-sprint` after staged external execution.
+8. Score anomalies and record confounds.
+9. Publish only after the minimum validation rule is satisfied.
 
 ## 10) Companion Documents
 
@@ -245,7 +247,7 @@ Use these when more detail is needed:
 
 1. Use this file as the primary runbook.
 2. Run the launcher in CLI, TUI, GUI, check, or inspect mode depending on task.
-3. Freeze the first Egypt monitoring/control pack.
-4. Start the Egypt backtest before scaling to Lebanon, Saudi Arabia, or the UAE.
-5. Keep the top-20 seed current and treat trend/lifestyle sources as supporting evidence only.
-6. Run the stdlib test suite before future launcher changes.
+3. Treat `plans/collection_runbook.md` and `plans/connector_readiness.csv` as the operator surface for staged external work.
+4. Keep the seeded registry current and treat trend/lifestyle sources as supporting evidence only.
+5. Run the stdlib test suite before future launcher changes.
+6. Keep `seed-33` honest as an access/freshness blocker until the official source surface improves.

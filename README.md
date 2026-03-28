@@ -6,6 +6,7 @@ MunchMusings is a planning-first, public-source intelligence workspace for detec
 
 - Source accounting is mostly closed: [plans/work_queue.csv](plans/work_queue.csv) has one active recency task, `ACC-RA-033`.
 - The collection manifest is stable at 27 completed runs and 7 honest `staged_external` runs in `artifacts/collection/collection-run-manifest.csv`.
+- Staged external rows are now explicit operator handoffs, not silent failures: start with `plans/connector_readiness.csv`, then inspect the staged spec under `artifacts/collection/raw/<source_id>/`.
 - `seed-05` OCHA Gaza is fixed to the live `publications/situation-reports` endpoint.
 - `seed-11` and `seed-12` now emit actionable staged request specs with matched district queries and connector readiness metadata.
 - `seed-33` Ashdod remains the only real tier-1 recency blocker.
@@ -36,6 +37,8 @@ That runs:
 
 and writes a dated run manifest plus log under `artifacts/operating-cycles/`.
 
+The wrapper may legitimately leave some sources in `staged_external`. That is expected when a source needs credentials, a browser export, or manual capture. Treat those rows as queued operator work, not broken automation.
+
 ### Launcher behavior
 - **Interactive terminal, no extra args:** launches the pipeline management console with live ledger, verification, collection, and latest-cycle status.
 - **Automation / scripting:** run directly with flags.
@@ -47,7 +50,7 @@ and writes a dated run manifest plus log under `artifacts/operating-cycles/`.
 - **Recent-accounting mode:** use `--recent-accounting` to refresh the source-recency ledger and summary in `plans/`.
 - **Verification-sprint mode:** use `--verification-sprint` to merge `plans/source_verification_findings.csv` plus normalized collection-derived verification updates into the recency ledger, refresh the rolling source-verification tracker, and sync derived `VER-*` queue rows.
 - **Collection scaffolding mode:** use `--scaffold-collection` to generate the collection pipeline pack in `artifacts/collection/`.
-- **Collection execution mode:** use `--collect-ready` to execute ready direct-source runs, including HDX metadata collectors, and stage query-based request specs.
+- **Collection execution mode:** use `--collect-ready` to execute ready direct-source runs, including HDX metadata collectors, and stage query, browser-export, and manual-capture request specs.
 - **Zone briefing mode:** use `--brief-zone` to generate a zone-level public-source briefing pack in `artifacts/briefings/`.
 - **Operating-cycle mode:** use `--operating-cycle` to run collection, verification, and briefing through the dated wrapper from inside `bootstrap.py`.
 
@@ -123,6 +126,19 @@ python bootstrap.py --operating-cycle
 # Run the full operating cycle with dated logs
 python scripts/run_operating_cycle.py
 ```
+
+## Handling Staged External Runs
+
+When `--collect-ready` or the operating-cycle wrapper leaves rows in `staged_external`, use this sequence:
+
+1. Check `plans/connector_readiness.csv` to see whether the source is `ready`, needs credentials, or needs a manual/browser step.
+2. Open the staged spec in `artifacts/collection/raw/<source_id>/run-*.json` or the normalized contract in `artifacts/collection/normalized/<source_id>.json`.
+3. Follow the `execution_contract`, `connector_next_action`, and any linked `plans/source_specs/*.json` file.
+4. Capture the external result into the staged raw/normalized artifact path expected by that source.
+5. Rerun `python bootstrap.py --recent-accounting`.
+6. Rerun `python bootstrap.py --verification-sprint`.
+
+`plans/collection_runbook.md` is the detailed operator runbook for this handoff.
 
 ## Output Contract
 

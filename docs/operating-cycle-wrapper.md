@@ -23,6 +23,23 @@ Why this exists:
 - It gives each run its own dated audit trail.
 - It avoids overwriting older cycle logs when the workflow is rerun.
 
+What to expect:
+
+- A successful cycle can still leave some rows in `staged_external`.
+- Those rows are operator handoffs for query execution, manual capture, browser export, or credential-gated collection.
+- The cycle is only considered collector-broken when rows fail unexpectedly, not when they stage honestly.
+
+When a cycle leaves staged work:
+
+1. Check `plans/connector_readiness.csv` for the connector state and next action.
+2. Inspect the staged raw spec in `artifacts/collection/raw/<source_id>/run-*.json`.
+3. Inspect the normalized staged contract in `artifacts/collection/normalized/<source_id>.json`.
+4. Follow any linked `plans/source_specs/*.json` execution contract.
+5. After the external step is completed, rerun `python bootstrap.py --recent-accounting`.
+6. Then rerun `python bootstrap.py --verification-sprint`.
+
+`plans/collection_runbook.md` is the operator-facing detailed runbook for this process.
+
 Common overrides:
 
 ```bash
