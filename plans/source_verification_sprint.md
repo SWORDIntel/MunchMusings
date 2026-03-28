@@ -1,6 +1,6 @@
 # Source Verification Sprint
 
-_Generated: 2026-03-28T20:45:28Z._
+_Generated: 2026-03-28T21:29:26Z._
 
 ## Purpose
 - Keep source verification rerunnable and keyed by `source_id`.

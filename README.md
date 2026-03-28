@@ -180,6 +180,7 @@ After a successful verification-sprint refresh, the launcher writes or updates:
 - `plans/source_verification_sprint.csv`
 - `plans/source_verification_sprint.md`
 - `plans/work_queue.csv`
+- `plans/work_queue.md`
 - `plans/recent_accounting.csv`
 - `plans/recent_accounting.md`
 - `plans/source_verification_findings.csv`

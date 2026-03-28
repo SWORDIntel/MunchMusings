@@ -1035,6 +1035,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
     connector_path = plans_dir / 'connector_readiness.csv'
     connector_summary_path = plans_dir / 'connector_readiness.md'
     work_queue_path = plans_dir / 'work_queue.csv'
+    work_queue_summary_path = plans_dir / 'work_queue.md'
 
     existing_sprint_rows = load_existing_rows_by_key(sprint_path, 'source_id')
     existing_connector_rows = load_existing_rows_by_key(connector_path, 'source_id')
@@ -1124,6 +1125,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
         work_queue_rows,
         work_queue_path,
     )
+    write_markdown(render_work_queue_summary(work_queue_rows), work_queue_summary_path)
 
     result = {
         'status': 'ok',
@@ -1137,6 +1139,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
         'connector_readiness_csv': str(connector_path),
         'connector_readiness_summary': str(connector_summary_path),
         'work_queue_csv': str(work_queue_path),
+        'work_queue_summary': str(work_queue_summary_path),
         'verification_row_count': len(sprint_rows),
         'finalized_external_runs': finalized_external_runs,
         'synced_staged_contracts': synced_staged_contracts,
@@ -1350,6 +1353,44 @@ def render_connector_readiness_summary(rows: list[dict[str, Any]]) -> str:
     lines.append('')
     lines.append('## Queue')
     lines.append('- Run `python bootstrap.py --verification-sprint` after connector changes to refresh the derived `EXT-*` work queue rows.')
+    return '\n'.join(lines)
+
+
+def render_work_queue_summary(rows: list[dict[str, Any]]) -> str:
+    status_counts: dict[str, int] = {}
+    active_rows = []
+    priority_order = {'in_progress': 0, 'blocked': 1, 'pending': 2}
+    for row in rows:
+        status = row.get('status', 'pending') or 'pending'
+        status_counts[status] = status_counts.get(status, 0) + 1
+        if status != 'completed':
+            active_rows.append(row)
+    active_rows.sort(key=lambda row: (priority_order.get(row.get('status', ''), 9), row.get('task_id', '')))
+    lines = [
+        '# Work Queue',
+        '',
+        f"_Generated: {utc_now().isoformat().replace('+00:00', 'Z')}._",
+        '',
+        '## Purpose',
+        '- Keep milestone, recent-accounting, verification, and external-execution tasks in one operator queue.',
+        '- Treat `EXT-*` rows as the primary staged-external action surface and `ACC-RA-*` rows as the recency/accounting lane.',
+        '',
+        '## Snapshot',
+    ]
+    lines.extend([f"- {key}: {value}" for key, value in sorted(status_counts.items())])
+    lines.append('')
+    lines.append('## Active Tasks')
+    if not active_rows:
+        lines.append('- No active tasks.')
+    else:
+        for row in active_rows[:10]:
+            lines.append(
+                f"- `{row.get('task_id', '')}` | {row.get('status', '')} | "
+                f"{row.get('source_id', '') or row.get('region', '') or '-'} | {row.get('next_action', '')}"
+            )
+    lines.append('')
+    lines.append('## Rerun')
+    lines.append('- `python bootstrap.py --verification-sprint` refreshes queue-derived lanes, staged contract metadata, and summary artifacts.')
     return '\n'.join(lines)
 
 

@@ -396,6 +396,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertTrue(Path(result['connector_readiness_csv']).exists())
             self.assertTrue(Path(result['connector_readiness_summary']).exists())
             self.assertTrue(Path(result['work_queue_csv']).exists())
+            self.assertTrue(Path(result['work_queue_summary']).exists())
 
             with Path(result['verification_sprint_csv']).open(newline='') as handle:
                 sprint_rows = list(csv.DictReader(handle))
@@ -426,6 +427,8 @@ class BootstrapTests(unittest.TestCase):
             self.assertIn('VER-001', queue_ids)
             self.assertIn('VER-003', queue_ids)
             self.assertEqual(queue_lookup['EXT-011']['next_action'], 'Configure a bounded API key, quota limits, and field masks before live collection.')
+            self.assertIn('# Work Queue', Path(result['work_queue_summary']).read_text())
+            self.assertIn('## Active Tasks', Path(result['work_queue_summary']).read_text())
 
     def test_scaffold_collection_action_writes_collection_pack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -494,6 +497,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertTrue(Path(result['verification_sprint_csv']).exists())
             self.assertTrue(Path(result['verification_sprint_summary']).exists())
             self.assertTrue(Path(result['work_queue_csv']).exists())
+            self.assertTrue(Path(result['work_queue_summary']).exists())
 
             with Path(result['verification_sprint_csv']).open(newline='') as handle:
                 sprint_rows = list(csv.DictReader(handle))
