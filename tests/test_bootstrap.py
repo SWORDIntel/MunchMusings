@@ -420,7 +420,13 @@ class BootstrapTests(unittest.TestCase):
             }
         ]
 
-        queue_rows = bootstrap.build_verification_queue_rows([], accounting_rows, sprint_rows, connector_rows, {'seed-11'})
+        queue_rows = bootstrap.build_verification_queue_rows(
+            [],
+            accounting_rows,
+            sprint_rows,
+            connector_rows,
+            {'seed-11': {'source_id': 'seed-11', 'expected_artifact': 'artifacts/collection/normalized/seed-11.json'}},
+        )
         queue_lookup = {row['task_id']: row for row in queue_rows}
 
         self.assertEqual(queue_lookup['VER-001']['status'], 'completed')
@@ -451,11 +457,18 @@ class BootstrapTests(unittest.TestCase):
             },
         ]
 
-        queue_rows = bootstrap.build_connector_queue_rows(connector_rows, {}, {'seed-11', 'seed-12'})
+        queue_rows = bootstrap.build_connector_queue_rows(
+            connector_rows,
+            {},
+            {
+                'seed-11': {'source_id': 'seed-11', 'expected_artifact': 'artifacts/collection/normalized/seed-11.json'},
+                'seed-12': {'source_id': 'seed-12', 'expected_artifact': 'artifacts/collection/normalized/seed-12.json'},
+            },
+        )
         queue_lookup = {row['task_id']: row for row in queue_rows}
 
         self.assertEqual(queue_lookup['EXT-011']['status'], 'blocked')
-        self.assertEqual(queue_lookup['EXT-011']['artifact'], 'plans/connector_readiness.csv')
+        self.assertEqual(queue_lookup['EXT-011']['artifact'], 'artifacts/collection/normalized/seed-11.json')
         self.assertEqual(queue_lookup['EXT-012']['status'], 'pending')
         self.assertEqual(queue_lookup['EXT-012']['agent'], 'proxy_accountant')
 
@@ -472,7 +485,7 @@ class BootstrapTests(unittest.TestCase):
             }
         ]
 
-        queue_rows = bootstrap.build_connector_queue_rows(connector_rows, {}, set())
+        queue_rows = bootstrap.build_connector_queue_rows(connector_rows, {}, {})
 
         self.assertEqual(queue_rows, [])
 

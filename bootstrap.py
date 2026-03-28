@@ -840,15 +840,17 @@ def connector_queue_acceptance_criteria(row: dict[str, str]) -> str:
 def build_connector_queue_rows(
     connector_rows: list[dict[str, str]],
     existing_lookup: dict[str, dict[str, str]],
-    staged_source_ids: set[str] | None = None,
+    staged_manifest_lookup: dict[str, dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
-    staged_source_ids = staged_source_ids or set()
+    staged_manifest_lookup = staged_manifest_lookup or {}
     rows = []
     for row in connector_rows:
-        if row.get('source_id', '') not in staged_source_ids:
+        source_id = row.get('source_id', '')
+        manifest_row = staged_manifest_lookup.get(source_id)
+        if not manifest_row:
             continue
         connector_id = row.get('connector_id', '')
-        task_suffix = connector_id.split('-', 1)[1] if '-' in connector_id else (row.get('source_id', '').split('-', 1)[1] if '-' in row.get('source_id', '') else row.get('source_id', ''))
+        task_suffix = connector_id.split('-', 1)[1] if '-' in connector_id else (source_id.split('-', 1)[1] if '-' in source_id else source_id)
         if not task_suffix:
             continue
         task_id = f'EXT-{task_suffix}'
@@ -861,8 +863,8 @@ def build_connector_queue_rows(
                 'priority': row.get('priority', '') or 'low',
                 'agent': row.get('owner', '') or 'source_monitor',
                 'region': row.get('region_or_country', ''),
-                'source_id': row.get('source_id', ''),
-                'artifact': 'plans/connector_readiness.csv',
+                'source_id': source_id,
+                'artifact': manifest_row.get('expected_artifact', '') or 'plans/connector_readiness.csv',
                 'target_date': target_date,
                 'depends_on': '',
                 'acceptance_criteria': connector_queue_acceptance_criteria(row),
@@ -906,9 +908,9 @@ def build_verification_queue_rows(
     accounting_rows: list[dict[str, str]],
     sprint_rows: list[dict[str, Any]],
     connector_rows: list[dict[str, str]],
-    staged_source_ids: set[str] | None = None,
+    staged_manifest_lookup: dict[str, dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
-    staged_source_ids = staged_source_ids or set()
+    staged_manifest_lookup = staged_manifest_lookup or {}
     existing_lookup = {row.get('task_id', ''): row for row in existing_rows if row.get('task_id')}
     accounting_source_ids = {row.get('source_id', '') for row in accounting_rows if row.get('source_id')}
     connector_source_ids = {row.get('source_id', '') for row in connector_rows if row.get('source_id')}
@@ -919,7 +921,7 @@ def build_verification_queue_rows(
             continue
         if task_id.startswith('ACC-RA-') and row.get('artifact') == 'plans/recent_accounting.csv' and row.get('source_id', '') in accounting_source_ids:
             continue
-        if task_id.startswith('EXT-') and row.get('artifact') == 'plans/connector_readiness.csv' and row.get('source_id', '') in connector_source_ids:
+        if task_id.startswith('EXT-') and row.get('source_id', '') in connector_source_ids:
             continue
         preserved_rows.append(row)
     lane_map = {
@@ -939,7 +941,7 @@ def build_verification_queue_rows(
         return 'pending'
 
     accounting_queue_rows = build_accounting_queue_rows(accounting_rows, existing_lookup)
-    connector_queue_rows = build_connector_queue_rows(connector_rows, existing_lookup, staged_source_ids)
+    connector_queue_rows = build_connector_queue_rows(connector_rows, existing_lookup, staged_manifest_lookup)
     ver_rows = []
     tracker_row = existing_lookup.get('VER-001', {})
     ver_rows.append(
@@ -1004,8 +1006,12 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
     synced_staged_contracts = sync_staged_external_contracts(Path(args.collection_dir), plans_dir, connector_lookup)
     existing_work_queue_rows = load_csv_rows(work_queue_path)
     manifest_rows = load_csv_rows(Path(args.collection_dir) / 'collection-run-manifest.csv')
-    staged_source_ids = {row.get('source_id', '') for row in manifest_rows if row.get('status') == 'staged_external' and row.get('source_id')}
-    work_queue_rows = build_verification_queue_rows(existing_work_queue_rows, accounting_rows, sprint_rows, connector_rows, staged_source_ids)
+    staged_manifest_lookup = {
+        row.get('source_id', ''): row
+        for row in manifest_rows
+        if row.get('status') == 'staged_external' and row.get('source_id')
+    }
+    work_queue_rows = build_verification_queue_rows(existing_work_queue_rows, accounting_rows, sprint_rows, connector_rows, staged_manifest_lookup)
 
     write_rows_csv(
         [
