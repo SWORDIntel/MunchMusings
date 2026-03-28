@@ -1,6 +1,6 @@
 # Connector Readiness
 
-_Generated: 2026-03-28T21:29:26Z._
+_Generated: 2026-03-28T22:12:31Z._
 
 ## Purpose
 - Track connector, query, and staged external execution infrastructure separately from publication-date verification.

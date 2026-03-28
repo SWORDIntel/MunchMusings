@@ -856,6 +856,7 @@ def load_staged_contract_queue_metadata(manifest_row: dict[str, str]) -> dict[st
         'request_method': payload.get('request_method', ''),
         'connector_status': payload.get('connector_status', ''),
         'credential_state': payload.get('credential_state', ''),
+        'operator_output_path': payload.get('operator_output_path', ''),
         'query_seed_path': payload.get('query_seed_path', ''),
         'district_scope': payload.get('district_scope', ''),
         'query_count': str(len(queries)) if isinstance(queries, list) and queries else '',
@@ -895,6 +896,7 @@ def build_connector_queue_rows(
                 'request_method': staged_meta.get('request_method', ''),
                 'connector_status': staged_meta.get('connector_status', '') or row.get('status', ''),
                 'credential_state': staged_meta.get('credential_state', '') or row.get('credential_state', ''),
+                'operator_output_path': staged_meta.get('operator_output_path', ''),
                 'query_seed_path': staged_meta.get('query_seed_path', '') or row.get('query_seed_file', ''),
                 'district_scope': staged_meta.get('district_scope', ''),
                 'query_count': staged_meta.get('query_count', ''),
@@ -1114,6 +1116,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
             'request_method',
             'connector_status',
             'credential_state',
+            'operator_output_path',
             'query_seed_path',
             'district_scope',
             'query_count',
@@ -5418,6 +5421,16 @@ def build_generic_staged_execution_contract(
     }
 
 
+def resolve_contract_path_template(path_template: str, manifest_row: dict[str, str], fallback_path: str = '') -> str:
+    if not path_template:
+        return fallback_path
+    return (
+        path_template
+        .replace('<run_id>', manifest_row.get('run_id', ''))
+        .replace('<source_id>', manifest_row.get('source_id', ''))
+    )
+
+
 def build_staged_execution_contract(
     adapter_type: str,
     relevant_queries: list[dict[str, str]],
@@ -5459,6 +5472,11 @@ def stage_query_request_spec(
         source_spec,
         connector_row,
     )
+    operator_output_path = resolve_contract_path_template(
+        source_spec.get('raw_path_template', ''),
+        manifest_row,
+        fallback_path=str(raw_path),
+    )
     payload = {
         'run_id': manifest_row.get('run_id', ''),
         'source_id': manifest_row.get('source_id', ''),
@@ -5472,6 +5490,7 @@ def stage_query_request_spec(
         'extraction_targets': source_spec.get('extraction_targets', []),
         'raw_path_template': source_spec.get('raw_path_template', ''),
         'normalized_path_template': source_spec.get('normalized_path_template', ''),
+        'operator_output_path': operator_output_path,
         'quality_checks': source_spec.get('quality_checks', []),
         'query_count': len(query_rows),
         'matched_query_count': len(relevant_queries),
@@ -5510,6 +5529,7 @@ def stage_query_request_spec(
         'extraction_targets': source_spec.get('extraction_targets', []),
         'raw_path_template': source_spec.get('raw_path_template', ''),
         'normalized_path_template': source_spec.get('normalized_path_template', ''),
+        'operator_output_path': operator_output_path,
         'quality_checks': source_spec.get('quality_checks', []),
         'execution_contract': execution_contract,
     }
@@ -5530,6 +5550,7 @@ def staged_normalized_payload_fields(
         'extraction_targets': fetch_meta.get('extraction_targets', []),
         'raw_path_template': fetch_meta.get('raw_path_template', ''),
         'normalized_path_template': fetch_meta.get('normalized_path_template', ''),
+        'operator_output_path': fetch_meta.get('operator_output_path', ''),
         'quality_checks': fetch_meta.get('quality_checks', []),
         'execution_contract': fetch_meta.get('execution_contract', {}),
         'query_count': fetch_meta.get('query_count', 0),
@@ -5915,6 +5936,7 @@ def process_collection_run(
                 'extraction_targets': fetch_meta.get('extraction_targets', []),
                 'raw_path_template': fetch_meta.get('raw_path_template', ''),
                 'normalized_path_template': fetch_meta.get('normalized_path_template', ''),
+                'operator_output_path': fetch_meta.get('operator_output_path', ''),
                 'quality_checks': fetch_meta.get('quality_checks', []),
                 'execution_contract': fetch_meta.get('execution_contract', {}),
                 'query_count': fetch_meta.get('query_count', 0),
@@ -6798,6 +6820,8 @@ def render_tui_queue_highlight(row: dict[str, Any]) -> list[str]:
             detail_parts.append(f"queries={row.get('query_count')}")
         if row.get('request_method'):
             detail_parts.append(f"method={row.get('request_method')}")
+        if row.get('operator_output_path'):
+            detail_parts.append(truncate_console_text(row.get('operator_output_path', ''), 48))
         if row.get('source_spec_path'):
             detail_parts.append(truncate_console_text(row.get('source_spec_path', ''), 48))
         if detail_parts:

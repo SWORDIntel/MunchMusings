@@ -93,8 +93,8 @@ class BootstrapTests(unittest.TestCase):
             (plans_dir / 'work_queue.csv').write_text(
                 '\n'.join(
                     [
-                        'task_id,status,priority,agent,region,source_id,artifact,source_spec_path,request_method,connector_status,credential_state,query_seed_path,district_scope,query_count,target_date,depends_on,next_action,acceptance_criteria',
-                        'EXT-012,pending,high,proxy_accountant,Regional,seed-12,artifacts/collection/normalized/seed-12.json,plans/source_specs/overpass_cairo_giza_collection.json,POST,ready,public_endpoint,artifacts/collection/overpass-query-seeds.csv,Imbaba; Shubra,2,2026-03-28,,Keep Overpass queries bounded and monitor endpoint policy, latency, and query failures.,Overpass contract',
+                        'task_id,status,priority,agent,region,source_id,artifact,source_spec_path,request_method,connector_status,credential_state,operator_output_path,query_seed_path,district_scope,query_count,target_date,depends_on,next_action,acceptance_criteria',
+                        'EXT-012,pending,high,proxy_accountant,Regional,seed-12,artifacts/collection/normalized/seed-12.json,plans/source_specs/overpass_cairo_giza_collection.json,POST,ready,public_endpoint,artifacts/collection/raw/seed-12/overpass/run-seed-12.json,artifacts/collection/overpass-query-seeds.csv,Imbaba; Shubra,2,2026-03-28,,Keep Overpass queries bounded and monitor endpoint policy, latency, and query failures.,Overpass contract',
                     ]
                 )
                 + '\n'
@@ -147,6 +147,7 @@ class BootstrapTests(unittest.TestCase):
                     'connector_status': 'needs_credentials',
                     'credential_state': 'api_key_required',
                     'request_method': 'POST',
+                    'operator_output_path': 'artifacts/collection/raw/seed-11/google_places/run-seed-11.json',
                     'source_spec_path': 'plans/source_specs/google_places_cairo_giza_collection.json',
                     'query_count': '24',
                 },
@@ -176,6 +177,7 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('Active queue:', rendered)
         self.assertIn('EXT-011 | blocked | seed-11', rendered)
         self.assertIn('needs_credentials/api_key_required | queries=24 | method=POST', rendered)
+        self.assertIn('artifacts/collection/raw/seed-11/google_place...', rendered)
         self.assertIn('ACC-RA-033 | pending | seed-33', rendered)
         self.assertIn('10) View work queue summary', rendered)
         self.assertIn('14) Exit', rendered)
@@ -662,6 +664,7 @@ class BootstrapTests(unittest.TestCase):
                         'request_method': 'POST',
                         'connector_status': 'ready',
                         'credential_state': 'public_endpoint',
+                        'operator_output_path': 'artifacts/collection/raw/seed-12/overpass/run-seed-12.json',
                         'query_seed_path': 'artifacts/collection/overpass-query-seeds.csv',
                         'district_scope': 'Imbaba; Shubra El Kheima',
                         'queries': [{'district_name': 'Imbaba'}, {'district_name': 'Shubra El Kheima'}],
@@ -693,6 +696,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(queue_row['request_method'], 'POST')
             self.assertEqual(queue_row['connector_status'], 'ready')
             self.assertEqual(queue_row['credential_state'], 'public_endpoint')
+            self.assertEqual(queue_row['operator_output_path'], 'artifacts/collection/raw/seed-12/overpass/run-seed-12.json')
             self.assertEqual(queue_row['query_seed_path'], 'artifacts/collection/overpass-query-seeds.csv')
             self.assertEqual(queue_row['district_scope'], 'Imbaba; Shubra El Kheima')
             self.assertEqual(queue_row['query_count'], '2')
@@ -786,6 +790,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['credential_state'], 'public_endpoint')
             self.assertEqual(payload['connector_next_action'], 'Capture the pinned page')
             self.assertEqual(payload['connector_url'], 'https://deliveroo.example/trends')
+            self.assertEqual(payload['operator_output_path'], str(collection_dir / 'raw' / 'seed-18' / 'run-seed-18.html'))
 
     def test_refresh_connector_readiness_from_staged_contracts_syncs_capture_time(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -3864,6 +3869,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['connector_status'], 'ready')
             self.assertEqual(payload['credential_state'], 'public_endpoint')
             self.assertEqual(payload['request_method'], 'GET')
+            self.assertEqual(payload['operator_output_path'], 'artifacts/collection/raw/seed-13/manual_capture/run-seed-13.json')
             self.assertTrue(payload['source_spec_path'].endswith('google_maps_billing_guidance_capture.json'))
             self.assertEqual(payload['execution_contract']['request_method'], 'GET')
             self.assertEqual(
@@ -3878,6 +3884,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(raw_payload['connector_status'], 'ready')
             self.assertEqual(raw_payload['credential_state'], 'public_endpoint')
             self.assertEqual(raw_payload['request_method'], 'GET')
+            self.assertEqual(raw_payload['operator_output_path'], 'artifacts/collection/raw/seed-13/manual_capture/run-seed-13.json')
             self.assertTrue(raw_payload['source_spec_path'].endswith('google_maps_billing_guidance_capture.json'))
             self.assertEqual(raw_payload['execution_contract']['request_method'], 'GET')
             with (collection_dir / 'evidence-capture-log.csv').open(newline='') as handle:
@@ -3988,6 +3995,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['credential_state'], 'api_key_required')
             self.assertEqual(payload['connector_owner'], 'proxy_accountant')
             self.assertEqual(payload['request_method'], 'POST')
+            self.assertEqual(payload['operator_output_path'], 'artifacts/collection/raw/seed-11/google_places/run-seed-11.json')
             self.assertTrue(payload['query_seed_path'].endswith('collection/places-query-seeds.csv'))
             self.assertTrue(payload['source_spec_path'].endswith('google_places_cairo_giza_collection.json'))
             self.assertEqual(payload['execution_contract']['search_endpoint'], 'https://places.googleapis.com/v1/places:searchText')
@@ -4003,6 +4011,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(raw_payload['connector_owner'], 'proxy_accountant')
             self.assertEqual(raw_payload['connector_next_action'], 'Configure an API key')
             self.assertEqual(raw_payload['request_method'], 'POST')
+            self.assertEqual(raw_payload['operator_output_path'], 'artifacts/collection/raw/seed-11/google_places/run-seed-11.json')
             self.assertTrue(raw_payload['source_spec_path'].endswith('google_places_cairo_giza_collection.json'))
             self.assertEqual(raw_payload['execution_contract']['search_endpoint'], 'https://places.googleapis.com/v1/places:searchText')
             self.assertEqual(raw_payload['execution_contract']['credential_state'], 'api_key_required')
@@ -4106,6 +4115,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['connector_status'], 'ready')
             self.assertEqual(payload['credential_state'], 'public_endpoint')
             self.assertEqual(payload['request_method'], 'POST')
+            self.assertEqual(payload['operator_output_path'], 'artifacts/collection/raw/seed-17/overpass_turbo/run-seed-17.json')
             self.assertTrue(payload['query_seed_path'].endswith('collection/overpass-query-seeds.csv'))
             self.assertTrue(payload['source_spec_path'].endswith('overpass_turbo_cairo_giza_collection.json'))
             self.assertEqual(payload['execution_contract']['interpreter_url'], 'https://overpass-api.de/api/interpreter')
@@ -4119,6 +4129,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(raw_payload['connector_status'], 'ready')
             self.assertEqual(raw_payload['credential_state'], 'public_endpoint')
             self.assertEqual(raw_payload['request_method'], 'POST')
+            self.assertEqual(raw_payload['operator_output_path'], 'artifacts/collection/raw/seed-17/overpass_turbo/run-seed-17.json')
             self.assertTrue(raw_payload['source_spec_path'].endswith('overpass_turbo_cairo_giza_collection.json'))
             self.assertEqual(raw_payload['execution_contract']['interpreter_url'], 'https://overpass-api.de/api/interpreter')
             self.assertEqual(raw_payload['execution_contract']['credential_state'], 'public_endpoint')
