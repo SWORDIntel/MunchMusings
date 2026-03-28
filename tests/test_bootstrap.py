@@ -231,6 +231,18 @@ class BootstrapTests(unittest.TestCase):
                 )
                 + '\n'
             )
+            collection_dir = tmp_path / 'collection'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        'run-seed-11,seed-11,Google Places API,market_proxy,places_api_search,high,Regional,2026-03-25T00:00:00Z,/tmp/seed-11.json,places-query-seeds.csv,staged_external,stage,Places contract staged',
+                        'run-seed-12,seed-12,OpenStreetMap Overpass,market_proxy,overpass_query,high,Regional,2026-03-25T00:00:00Z,/tmp/seed-12.json,overpass-query-seeds.csv,staged_external,stage,Overpass contract staged',
+                    ]
+                )
+                + '\n'
+            )
 
             args = argparse.Namespace(
                 input=str(self.seed_path),
@@ -238,7 +250,7 @@ class BootstrapTests(unittest.TestCase):
                 docs_csv=str(tmp_path / 'source-registry.csv'),
                 pack_dir=str(tmp_path / 'v0_1'),
                 plans_dir=str(plans_dir),
-                collection_dir=str(tmp_path / 'collection'),
+                collection_dir=str(collection_dir),
                 briefing_dir=str(tmp_path / 'briefings'),
                 zone_name='Cairo/Giza pilot',
                 zone_country='Egypt',
@@ -408,7 +420,7 @@ class BootstrapTests(unittest.TestCase):
             }
         ]
 
-        queue_rows = bootstrap.build_verification_queue_rows([], accounting_rows, sprint_rows, connector_rows)
+        queue_rows = bootstrap.build_verification_queue_rows([], accounting_rows, sprint_rows, connector_rows, {'seed-11'})
         queue_lookup = {row['task_id']: row for row in queue_rows}
 
         self.assertEqual(queue_lookup['VER-001']['status'], 'completed')
@@ -439,13 +451,103 @@ class BootstrapTests(unittest.TestCase):
             },
         ]
 
-        queue_rows = bootstrap.build_connector_queue_rows(connector_rows, {})
+        queue_rows = bootstrap.build_connector_queue_rows(connector_rows, {}, {'seed-11', 'seed-12'})
         queue_lookup = {row['task_id']: row for row in queue_rows}
 
         self.assertEqual(queue_lookup['EXT-011']['status'], 'blocked')
         self.assertEqual(queue_lookup['EXT-011']['artifact'], 'plans/connector_readiness.csv')
         self.assertEqual(queue_lookup['EXT-012']['status'], 'pending')
         self.assertEqual(queue_lookup['EXT-012']['agent'], 'proxy_accountant')
+
+    def test_build_connector_queue_rows_omits_nonstaged_connector_sources(self) -> None:
+        connector_rows = [
+            {
+                'connector_id': 'CON-011',
+                'status': 'needs_credentials',
+                'priority': 'high',
+                'owner': 'proxy_accountant',
+                'source_id': 'seed-11',
+                'region_or_country': 'Regional',
+                'source_name': 'Google Places API',
+            }
+        ]
+
+        queue_rows = bootstrap.build_connector_queue_rows(connector_rows, {}, set())
+
+        self.assertEqual(queue_rows, [])
+
+    def test_sync_staged_external_contracts_refreshes_manual_capture_connector_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            plans_dir = tmp_path / 'plans'
+            collection_dir = tmp_path / 'collection'
+            (plans_dir / 'source_specs').mkdir(parents=True, exist_ok=True)
+            (collection_dir / 'raw' / 'seed-18').mkdir(parents=True, exist_ok=True)
+            (collection_dir / 'normalized').mkdir(parents=True, exist_ok=True)
+
+            (plans_dir / 'connector_readiness.csv').write_text(
+                '\n'.join(
+                    [
+                        'connector_id,status,priority,owner,source_id,source_name,adapter_type,region_or_country,query_seed_file,credential_state,last_checked_utc,next_action,notes,url',
+                        'CON-018,ready,low,source_monitor,seed-18,Deliveroo UAE trend releases,manual_capture,UAE,,public_endpoint,,Capture the pinned page,Soft evidence only,https://deliveroo.example/trends',
+                    ]
+                )
+                + '\n'
+            )
+            (plans_dir / 'source_specs' / 'deliveroo.json').write_text(
+                json.dumps(
+                    {
+                        'source_id': 'seed-18',
+                        'request_method': 'GET',
+                        'request_params': {'capture_mode': 'html_snapshot'},
+                        'operator_steps': ['Open the pinned page'],
+                    }
+                )
+                + '\n'
+            )
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-18,18,Deliveroo UAE trend releases,consumer_trends,tier2,supporting_proxy,manual_review,manual_capture,html,UAE,occasional,{collection_dir / "raw" / "seed-18"},{collection_dir / "normalized" / "seed-18.json"},{collection_dir / "evidence-capture-log.csv"},,Soft evidence only,https://deliveroo.example/trends',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-18,seed-18,Deliveroo UAE trend releases,supporting_proxy,manual_capture,low,UAE,2026-03-28T00:00:00Z,{collection_dir / "normalized" / "seed-18.json"},,staged_external,stage,Manual capture staged',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'normalized' / 'seed-18.json').write_text(
+                json.dumps(
+                    {
+                        'run_id': 'run-seed-18',
+                        'source_id': 'seed-18',
+                        'source_name': 'Deliveroo UAE trend releases',
+                        'adapter_type': 'manual_capture',
+                        'captured_utc': '2026-03-27T00:00:00Z',
+                        'capture_status': 'staged_external',
+                        'connector_status': '',
+                        'credential_state': '',
+                        'connector_next_action': '',
+                    }
+                )
+                + '\n'
+            )
+
+            synced = bootstrap.sync_staged_external_contracts(collection_dir, plans_dir)
+            self.assertEqual(synced, 1)
+
+            payload = json.loads((collection_dir / 'normalized' / 'seed-18.json').read_text())
+            self.assertEqual(payload['connector_status'], 'ready')
+            self.assertEqual(payload['credential_state'], 'public_endpoint')
+            self.assertEqual(payload['connector_next_action'], 'Capture the pinned page')
+            self.assertEqual(payload['connector_url'], 'https://deliveroo.example/trends')
 
     def test_verification_sprint_generates_accounting_tasks_for_noncurrent_tier1_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

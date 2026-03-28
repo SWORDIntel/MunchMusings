@@ -791,6 +791,7 @@ def render_source_verification_summary(rows: list[dict[str, Any]]) -> str:
     lines.append('')
     lines.append('## Rerun')
     lines.append('- `python bootstrap.py --verification-sprint` refreshes the ledger-backed tracker plus derived `VER-*` and `EXT-*` queue rows.')
+    lines.append('- It also refreshes the staged request-contract artifacts for manifest rows still marked `staged_external`.')
     return '\n'.join(lines)
 
 
@@ -839,9 +840,13 @@ def connector_queue_acceptance_criteria(row: dict[str, str]) -> str:
 def build_connector_queue_rows(
     connector_rows: list[dict[str, str]],
     existing_lookup: dict[str, dict[str, str]],
+    staged_source_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
+    staged_source_ids = staged_source_ids or set()
     rows = []
     for row in connector_rows:
+        if row.get('source_id', '') not in staged_source_ids:
+            continue
         connector_id = row.get('connector_id', '')
         task_suffix = connector_id.split('-', 1)[1] if '-' in connector_id else (row.get('source_id', '').split('-', 1)[1] if '-' in row.get('source_id', '') else row.get('source_id', ''))
         if not task_suffix:
@@ -901,7 +906,9 @@ def build_verification_queue_rows(
     accounting_rows: list[dict[str, str]],
     sprint_rows: list[dict[str, Any]],
     connector_rows: list[dict[str, str]],
+    staged_source_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
+    staged_source_ids = staged_source_ids or set()
     existing_lookup = {row.get('task_id', ''): row for row in existing_rows if row.get('task_id')}
     accounting_source_ids = {row.get('source_id', '') for row in accounting_rows if row.get('source_id')}
     connector_source_ids = {row.get('source_id', '') for row in connector_rows if row.get('source_id')}
@@ -932,7 +939,7 @@ def build_verification_queue_rows(
         return 'pending'
 
     accounting_queue_rows = build_accounting_queue_rows(accounting_rows, existing_lookup)
-    connector_queue_rows = build_connector_queue_rows(connector_rows, existing_lookup)
+    connector_queue_rows = build_connector_queue_rows(connector_rows, existing_lookup, staged_source_ids)
     ver_rows = []
     tracker_row = existing_lookup.get('VER-001', {})
     ver_rows.append(
@@ -993,8 +1000,12 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
     existing_connector_rows = load_existing_rows_by_key(connector_path, 'source_id')
     sprint_rows = build_source_verification_rows(accounting_rows, existing_sprint_rows)
     connector_rows = build_connector_readiness_rows(records, existing_connector_rows)
+    connector_lookup = {row.get('source_id', ''): row for row in connector_rows if row.get('source_id')}
+    synced_staged_contracts = sync_staged_external_contracts(Path(args.collection_dir), plans_dir, connector_lookup)
     existing_work_queue_rows = load_csv_rows(work_queue_path)
-    work_queue_rows = build_verification_queue_rows(existing_work_queue_rows, accounting_rows, sprint_rows, connector_rows)
+    manifest_rows = load_csv_rows(Path(args.collection_dir) / 'collection-run-manifest.csv')
+    staged_source_ids = {row.get('source_id', '') for row in manifest_rows if row.get('status') == 'staged_external' and row.get('source_id')}
+    work_queue_rows = build_verification_queue_rows(existing_work_queue_rows, accounting_rows, sprint_rows, connector_rows, staged_source_ids)
 
     write_rows_csv(
         [
@@ -1074,6 +1085,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
         'connector_readiness_summary': str(connector_summary_path),
         'work_queue_csv': str(work_queue_path),
         'verification_row_count': len(sprint_rows),
+        'synced_staged_contracts': synced_staged_contracts,
         'source_summary': build_source_summary(records),
         'launcher_mode': getattr(args, 'launcher_mode', 'cli'),
     }
@@ -5328,11 +5340,12 @@ def stage_query_request_spec(
     collection_dir: Path,
     plans_dir: Path,
     raw_path: Path,
+    connector_rows: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     query_seed_name = adapter_row.get('query_seed_file', '')
     query_seed_path = collection_dir / query_seed_name if query_seed_name else None
     query_rows = load_csv_rows(query_seed_path) if query_seed_path and query_seed_path.is_file() else []
-    connector_rows = load_existing_rows_by_key(plans_dir / 'connector_readiness.csv', 'source_id')
+    connector_rows = connector_rows or load_existing_rows_by_key(plans_dir / 'connector_readiness.csv', 'source_id')
     connector_row = connector_rows.get(manifest_row.get('source_id', ''), {})
     source_spec_path, source_spec = load_source_spec(plans_dir, manifest_row.get('source_id', ''))
     district_scope = manifest_row.get('district_scope', '')
@@ -5403,6 +5416,89 @@ def stage_query_request_spec(
         'quality_checks': source_spec.get('quality_checks', []),
         'execution_contract': execution_contract,
     }
+
+
+def staged_normalized_payload_fields(
+    manifest_row: dict[str, str],
+    adapter_row: dict[str, str],
+    fetch_meta: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        'capture_status': 'staged_external',
+        'district_scope': fetch_meta.get('district_scope', manifest_row.get('district_scope', '')),
+        'query_seed_file': adapter_row.get('query_seed_file', ''),
+        'query_seed_path': fetch_meta.get('query_seed_path', ''),
+        'source_spec_path': fetch_meta.get('source_spec_path', ''),
+        'request_method': fetch_meta.get('request_method', ''),
+        'extraction_targets': fetch_meta.get('extraction_targets', []),
+        'raw_path_template': fetch_meta.get('raw_path_template', ''),
+        'normalized_path_template': fetch_meta.get('normalized_path_template', ''),
+        'quality_checks': fetch_meta.get('quality_checks', []),
+        'execution_contract': fetch_meta.get('execution_contract', {}),
+        'query_count': fetch_meta.get('query_count', 0),
+        'matched_queries': fetch_meta.get('matched_queries', 0),
+        'queries': fetch_meta.get('queries', []),
+        'connector_status': fetch_meta.get('connector_status', ''),
+        'credential_state': fetch_meta.get('credential_state', ''),
+        'connector_priority': fetch_meta.get('connector_priority', ''),
+        'connector_owner': fetch_meta.get('connector_owner', ''),
+        'connector_next_action': fetch_meta.get('connector_next_action', ''),
+        'connector_notes': fetch_meta.get('connector_notes', ''),
+        'connector_url': fetch_meta.get('connector_url', ''),
+        'checksum_sha256': fetch_meta['checksum_sha256'],
+    }
+
+
+def sync_staged_external_contracts(
+    collection_dir: Path,
+    plans_dir: Path,
+    connector_rows: dict[str, dict[str, str]] | None = None,
+) -> int:
+    paths = collection_pack_paths(collection_dir)
+    adapter_lookup = load_adapter_lookup(paths['adapter_registry'])
+    manifest_rows = load_csv_rows(paths['run_manifest'])
+    synced = 0
+    captured_utc = utc_now().isoformat().replace('+00:00', 'Z')
+    for manifest_row in manifest_rows:
+        if manifest_row.get('status') != 'staged_external':
+            continue
+        source_id = manifest_row.get('source_id', '')
+        adapter_row = adapter_lookup.get(source_id)
+        if not adapter_row:
+            continue
+        adapter_type = manifest_row.get('adapter_type', '')
+        raw_dir = Path(adapter_row.get('raw_landing_dir', collection_dir / 'raw' / source_id))
+        raw_path = raw_dir / f"{manifest_row.get('run_id', source_id)}{raw_extension(adapter_type)}"
+        fetch_meta = stage_query_request_spec(
+            manifest_row,
+            adapter_row,
+            collection_dir,
+            plans_dir,
+            raw_path,
+            connector_rows=connector_rows,
+        )
+        normalized_path = Path(adapter_row.get('normalized_output_path', collection_dir / 'normalized' / f'{source_id}.json'))
+        normalized_payload = {}
+        if normalized_path.exists():
+            try:
+                normalized_payload = json.loads(normalized_path.read_text())
+            except (OSError, json.JSONDecodeError):
+                normalized_payload = {}
+        normalized_payload.update(
+            {
+                'run_id': manifest_row.get('run_id', ''),
+                'source_id': source_id,
+                'source_name': manifest_row.get('source_name', ''),
+                'adapter_type': adapter_type,
+                'captured_utc': captured_utc,
+                'source_url': adapter_row.get('url', ''),
+                'raw_path': str(raw_path),
+            }
+        )
+        normalized_payload.update(staged_normalized_payload_fields(manifest_row, adapter_row, fetch_meta))
+        write_normalized_collection_record(normalized_path, normalized_payload)
+        synced += 1
+    return synced
 
 
 def write_normalized_collection_record(path: Path, payload: dict[str, Any]) -> None:

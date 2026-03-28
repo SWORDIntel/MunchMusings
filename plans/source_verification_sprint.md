@@ -1,6 +1,6 @@
 # Source Verification Sprint
 
-_Generated: 2026-03-28T19:43:11Z._
+_Generated: 2026-03-28T19:49:19Z._
 
 ## Purpose
 - Keep source verification rerunnable and keyed by `source_id`.
@@ -17,3 +17,4 @@ _Generated: 2026-03-28T19:43:11Z._
 
 ## Rerun
 - `python bootstrap.py --verification-sprint` refreshes the ledger-backed tracker plus derived `VER-*` and `EXT-*` queue rows.
+- It also refreshes the staged request-contract artifacts for manifest rows still marked `staged_external`.
