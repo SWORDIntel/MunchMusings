@@ -6,7 +6,7 @@ _Scope: Egypt, UAE, Saudi Arabia, Lebanon/Syria corridor, and Gaza/OPT as a mark
 ## TIS // Tactical Implementation Spec
 
 ### SITREP
-- **Current State:** The repository now has a live launcher, seeded source registry, collection manifest, recent-accounting tracker, source-spec contracts, and staged-external operator handoffs. The main remaining recency blocker is Ashdod (`seed-33`), not missing pipeline scaffolding.
+- **Current State:** The repository now has a live launcher, seeded source registry, collection manifest, recent-accounting tracker, source-spec contracts, and staged-external operator handoffs. The main remaining recency blocker is Ashdod (`seed-33`), now tracked as a `manual_review` access/freshness issue rather than hard due-now debt.
 - **Objective:** Design a legally compliant scraper + analysis framework that uses food-system proxies to detect migration-linked demographic shifts without bypassing geo-fencing, intercepting traffic, evading anti-bot controls, or abusing proxies.
 - **Threat Assessment:** The core risk is analytical overreach, not just collection risk. Cuisine density, menu language, and snack assortment changes are only proxies. They can be distorted by inflation, Ramadan seasonality, tourism, premiumization, platform assortment churn, and chain-expansion strategy.
 
@@ -54,11 +54,12 @@ Use only:
 
 ### Current operator workflow
 When a source stages instead of collecting directly:
+- start with the matching `EXT-*` row in `plans/work_queue.csv`,
+- inspect the normalized staged contract in `artifacts/collection/normalized/<source_id>.json`,
 - check `plans/connector_readiness.csv`,
 - inspect the staged raw contract in `artifacts/collection/raw/<source_id>/run-*.json`,
-- inspect the normalized staged contract in `artifacts/collection/normalized/<source_id>.json`,
 - follow the linked `plans/source_specs/*.json` instructions,
-- then rerun `python bootstrap.py --recent-accounting` and `python bootstrap.py --verification-sprint`.
+- then rerun `python bootstrap.py --verification-sprint` to refresh recent accounting, finalize completed external captures, and rebuild the queue.
 
 ### Analytic discipline
 Every claim should be tagged as one of:
@@ -484,7 +485,7 @@ Start small.
 
 1. Lock the scoring workflow in `docs/confidence-rubric.md` so every anomaly receives a repeatable confidence label.
 2. Finalize the first 20 monitoring districts and their controls using `docs/district-selection-matrix.md`.
-3. Keep `plans/connector_readiness.csv` and `plans/collection_runbook.md` aligned with the staged-external operator workflow.
+3. Keep `plans/work_queue.csv`, `plans/connector_readiness.csv`, and `plans/collection_runbook.md` aligned with the staged-external operator workflow.
 4. Review and expand `docs/source-registry.csv` with term/licensing notes, district coverage, and owner metadata.
 5. Stand up PostgreSQL + PostGIS schema for the tables listed here when the evidence loop is stable enough to justify it.
 6. Build a lexicon seed file for Sudanese, Levantine, Egyptian, and Gulf food terms.
