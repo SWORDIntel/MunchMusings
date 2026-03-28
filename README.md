@@ -2,6 +2,14 @@
 
 MunchMusings is a planning-first, public-source intelligence workspace for detecting migration-linked food-market signals across Egypt, Israel, the UAE, Saudi Arabia, Lebanon/Syria, and Gaza/OPT.
 
+## Current State
+
+- Source accounting is mostly closed: [plans/work_queue.csv](plans/work_queue.csv) has one active recency task, `ACC-RA-033`.
+- The collection manifest is stable at 27 completed runs and 7 honest `staged_external` runs in `artifacts/collection/collection-run-manifest.csv`.
+- `seed-05` OCHA Gaza is fixed to the live `publications/situation-reports` endpoint.
+- `seed-11` and `seed-12` now emit actionable staged request specs with matched district queries and connector readiness metadata.
+- `seed-33` Ashdod remains the only real tier-1 recency blocker.
+
 ## Start Here
 
 If you only read one planning document, read:
@@ -175,7 +183,8 @@ After a successful zone briefing run, the launcher writes a zone-specific folder
 - `.gitignore` now ignores Python cache artifacts.
 - `tests/test_bootstrap.py` covers validation, source-summary generation, check-only mode, and bootstrap artifact writing.
 - `tests/test_bootstrap.py` also covers v0.1 operator-pack generation.
-- The launcher remains Python-stdlib only.
+- The runtime is no longer Python-stdlib only: `bootstrap.py` uses `requests`, and `scripts/dashboard.py` uses `rich`.
+- `python -m unittest -v` is the canonical test entry point.
 
 ## Repository Layout
 

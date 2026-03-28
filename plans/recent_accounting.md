@@ -1,6 +1,6 @@
 # Recent Accounting Summary
 
-_Generated: 2026-03-26T06:12:59Z._
+_Generated: 2026-03-28T14:20:49Z._
 
 ## Why this exists
 - This ledger is the execution checkpoint for keeping source claims recent, attributable, and reviewable.
@@ -10,16 +10,16 @@ _Generated: 2026-03-26T06:12:59Z._
 
 ## Snapshot
 - Total tracked sources: 30
-- Current: 12
+- Current: 21
 - Due now: 2
-- Overdue: 5
+- Overdue: 0
 - Blocked: 0
-- Manual review cadence: 5
+- Manual review cadence: 1
 - Unknown recency: 6
-- Unassigned owners: 14
+- Unassigned owners: 13
 - Pending review rows: 6
 
 ## Immediate actions
-1. Fill `owner` and `last_checked_utc` for every tier-1 source.
-2. Capture `last_published_date`, `latest_period_covered`, and `evidence_link` for the Egypt baseline sources first.
-3. Treat `unknown` and `overdue` rows as the current work queue for accurate recent accounting.
+1. Resolve the remaining tier-1 non-current rows first: seed-33.
+2. Treat `unknown` and `overdue` rows as the priority backlog before due-now or manual-review cleanup.
+3. Backfill `owner` for the remaining unassigned rows so queue ownership matches the ledger.

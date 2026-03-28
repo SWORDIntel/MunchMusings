@@ -23,6 +23,26 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('humanitarian', summary['family_counts'])
         self.assertIn('tier1', summary['tier_counts'])
 
+    def test_derive_recency_status_honors_manual_review_status(self) -> None:
+        self.assertEqual(
+            bootstrap.derive_recency_status('weekly', '2025-01-01', 'manual_review'),
+            'manual_review',
+        )
+
+    def test_derive_recency_status_treats_active_periodic_manual_review_as_current(self) -> None:
+        self.assertEqual(
+            bootstrap.derive_recency_status('periodic', '2025-01-01', 'manual_review', '2025-11/2099-07'),
+            'current',
+        )
+
+    def test_unhcr_egypt_sudan_emergency_update_matches_arrivals_title(self) -> None:
+        self.assertTrue(
+            bootstrap.unhcr_document_title_match(
+                'UNHCR Egypt Sudan Emergency Update',
+                'Egypt: New Arrivals from Sudan as of 19 March 2026',
+            )
+        )
+
     def test_check_action_returns_summary_without_writes(self) -> None:
         args = argparse.Namespace(
             input=str(self.seed_path),
@@ -152,6 +172,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(rows[0]['owner'], 'ops-a')
             self.assertEqual(rows[0]['notes'], 'Preserve this note')
             self.assertEqual(rows[0]['recency_status'], 'current')
+            self.assertIn('mirror_evidence_link', rows[0])
             self.assertEqual(rows[1]['recency_status'], 'unknown')
 
     def test_verification_sprint_action_preserves_state_and_syncs_queue(self) -> None:
@@ -184,7 +205,8 @@ class BootstrapTests(unittest.TestCase):
                     [
                         'task_id,status,priority,agent,region,source_id,artifact,target_date,depends_on,acceptance_criteria',
                         'ACC-001,completed,high,source_monitor,Egypt,seed-01,plans/recent_accounting.csv,2026-03-26,,Keep baseline task',
-                        'ACC-900,in_progress,high,humanitarian_feed_monitor,Global,seed-24,plans/recent_accounting.csv,2026-03-26,,Duplicate verification task to remove',
+                        'ACC-RA-008,pending,medium,proxy_accountant,Lebanon,seed-08,plans/recent_accounting.csv,2026-03-26,,Obsolete tier2 accounting task to remove',
+                        'ACC-RA-900,in_progress,high,humanitarian_feed_monitor,Global,seed-24,plans/recent_accounting.csv,2026-03-26,,Duplicate verification task to remove',
                         'VER-999,pending,high,source_monitor,Global,seed-24,plans/source_verification_sprint.csv,2026-03-26,,Old verification row to replace',
                     ]
                 )
@@ -236,7 +258,9 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(connector_lookup['seed-11']['status'], 'needs_credentials')
             self.assertEqual(connector_lookup['seed-12']['status'], 'ready')
             self.assertIn('ACC-001', queue_ids)
-            self.assertNotIn('ACC-900', queue_ids)
+            self.assertIn('ACC-RA-024', queue_ids)
+            self.assertNotIn('ACC-RA-008', queue_ids)
+            self.assertNotIn('ACC-RA-900', queue_ids)
             self.assertIn('VER-001', queue_ids)
             self.assertIn('VER-003', queue_ids)
 
@@ -273,7 +297,8 @@ class BootstrapTests(unittest.TestCase):
 
             with Path(result['source_adapter_registry']).open(newline='') as handle:
                 adapter_rows = {row['source_id']: row for row in csv.DictReader(handle)}
-            self.assertEqual(adapter_rows['seed-25']['adapter_type'], 'hdx_signals_story')
+            self.assertEqual(adapter_rows['seed-25']['adapter_type'], 'hdx_dataset_metadata')
+            self.assertEqual(adapter_rows['seed-22']['adapter_type'], 'saudi_gastat_cpi')
             self.assertEqual(adapter_rows['seed-23']['adapter_type'], 'lebanon_cas_cpi')
             self.assertEqual(adapter_rows['seed-31']['adapter_type'], 'israel_cbs_price_indices')
             self.assertEqual(adapter_rows['seed-32']['adapter_type'], 'israel_cbs_impexp_files')
@@ -314,10 +339,100 @@ class BootstrapTests(unittest.TestCase):
 
             sprint_ids = {row['source_id'] for row in sprint_rows}
             self.assertTrue({'seed-21', 'seed-22', 'seed-23', 'seed-24', 'seed-25', 'seed-26', 'seed-27'}.issubset(sprint_ids))
+            self.assertIn('mirror_evidence_link', sprint_rows[0])
             self.assertTrue(any(row['task_id'] == 'VER-001' for row in queue_rows))
             self.assertTrue(any(row['task_id'] == 'VER-002' for row in queue_rows))
             self.assertTrue(any(row['task_id'] == 'VER-003' for row in queue_rows))
             self.assertTrue(any(row['task_id'] == 'VER-004' for row in queue_rows))
+
+    def test_build_verification_queue_rows_omits_empty_lane_tasks_and_completes_tracker(self) -> None:
+        accounting_rows = [
+            {
+                'source_id': 'seed-33',
+                'rank': '33',
+                'source_name': 'Ashdod Port Financial and Operating Updates',
+                'source_family': 'market_monitor',
+                'priority_tier': 'tier1',
+                'region_or_country': 'Israel',
+                'recency_status': 'due_now',
+                'owner': 'source_monitor',
+                'next_check_due_utc': '2026-07-06T12:42:47Z',
+            }
+        ]
+        sprint_rows = [
+            {
+                'source_id': 'seed-25',
+                'lane': 'humanitarian_feed',
+                'status': 'verified',
+                'region_or_country': 'Global',
+            },
+            {
+                'source_id': 'seed-33',
+                'lane': 'market_monitor',
+                'status': 'verified',
+                'region_or_country': 'Israel',
+            },
+        ]
+
+        queue_rows = bootstrap.build_verification_queue_rows([], accounting_rows, sprint_rows)
+        queue_lookup = {row['task_id']: row for row in queue_rows}
+
+        self.assertEqual(queue_lookup['VER-001']['status'], 'completed')
+        self.assertNotIn('VER-002', queue_lookup)
+        self.assertIn('VER-003', queue_lookup)
+        self.assertIn('VER-004', queue_lookup)
+
+    def test_verification_sprint_generates_accounting_tasks_for_noncurrent_tier1_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            plans_dir = tmp_path / 'plans'
+            plans_dir.mkdir(parents=True, exist_ok=True)
+            (plans_dir / 'recent_accounting.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,region_or_country,refresh_cadence,expected_recency_window,last_checked_utc,last_published_date,latest_period_covered,claim_date_utc,recency_status,owner,evidence_link,evidence_path,status,next_check_due_utc,next_action,notes,url',
+                        'seed-01,1,UNHCR Egypt data portal,humanitarian,tier1,Egypt,weekly,8 days,2026-03-25T00:00:00Z,2026-03-21,2026-03,2026-03-25T00:00:00Z,current,ops-a,https://example.test/evidence,,in_review,2026-04-02T00:00:00Z,Current row,Current note,https://data.unhcr.org/en/country/egy',
+                        'seed-24,24,HDX Humanitarian API,humanitarian_feed,tier1,Global,weekly,8 days,2026-03-25T00:00:00Z,,,2026-03-25T00:00:00Z,unknown,source_monitor,https://example.test/hapi,,in_review,2026-04-02T00:00:00Z,Capture dated product evidence,Existing HAPI note,https://data.humdata.org/hapi',
+                    ]
+                )
+                + '\n'
+            )
+            (plans_dir / 'work_queue.csv').write_text(
+                '\n'.join(
+                    [
+                        'task_id,status,priority,agent,region,source_id,artifact,target_date,depends_on,acceptance_criteria',
+                        'ACC-RA-900,in_progress,high,humanitarian_feed_monitor,Global,seed-24,plans/recent_accounting.csv,2026-03-26,,Duplicate verification task to remove',
+                    ]
+                )
+                + '\n'
+            )
+
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(plans_dir),
+                collection_dir=str(tmp_path / 'collection'),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            result = bootstrap.execute_action(args, action='verification_sprint')
+            with Path(result['work_queue_csv']).open(newline='') as handle:
+                queue_lookup = {row['task_id']: row for row in csv.DictReader(handle)}
+
+            self.assertIn('ACC-RA-024', queue_lookup)
+            self.assertEqual(queue_lookup['ACC-RA-024']['source_id'], 'seed-24')
+            self.assertNotIn('ACC-RA-900', queue_lookup)
 
     def test_verification_sprint_action_preserves_analyst_state_and_refreshes_derived_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -568,6 +683,56 @@ class BootstrapTests(unittest.TestCase):
 
             self.assertEqual(sprint_rows['seed-03']['best_current_page'], 'https://data.unhcr.org/en/country/lbn')
             self.assertEqual(sprint_rows['seed-03']['notes'], 'Custom analyst note')
+
+    def test_verification_sprint_refreshes_hdx_product_host_best_current_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            plans_dir = tmp_path / 'plans'
+            plans_dir.mkdir(parents=True, exist_ok=True)
+            (plans_dir / 'recent_accounting.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,region_or_country,refresh_cadence,expected_recency_window,last_checked_utc,last_published_date,latest_period_covered,claim_date_utc,recency_status,owner,evidence_link,evidence_path,status,next_check_due_utc,next_action,notes,url',
+                        'seed-25,25,HDX Signals,humanitarian_feed,tier1,Global,weekly,8 days,2026-03-27T00:00:00Z,2026-03-17,2025-02,,due_now,source_monitor,https://data.humdata.org/api/3/action/package_show?id=hdx-signals,,in_review,2026-04-04T00:00:00Z,Review dataset resources,Existing note,https://data.humdata.org/signals',
+                    ]
+                )
+                + '\n'
+            )
+            (plans_dir / 'source_verification_sprint.csv').write_text(
+                '\n'.join(
+                    [
+                        'sprint_id,status,priority,lane,owner,source_id,source_name,source_family,priority_tier,region_or_country,best_current_page,latest_visible_date,latest_period_covered,recency_status,evidence_link,last_checked_utc,next_action,notes',
+                        'SV-025,research_complete,high,humanitarian_feed,humanitarian_feed_monitor,seed-25,HDX Signals,humanitarian_feed,tier1,Global,https://centre.humdata.org/introducing-hdx-signals/,2025-04-03,2025-02,manual_review,https://centre.humdata.org/hdx-signals-alerting-humanitarians-to-deteriorating-crises/,2026-03-01T00:00:00Z,Keep this next action,Custom analyst note',
+                    ]
+                )
+                + '\n'
+            )
+
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(plans_dir),
+                collection_dir=str(tmp_path / 'collection'),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            result = bootstrap.execute_action(args, action='verification_sprint')
+            with Path(result['verification_sprint_csv']).open(newline='') as handle:
+                sprint_rows = {row['source_id']: row for row in csv.DictReader(handle)}
+
+            self.assertEqual(sprint_rows['seed-25']['best_current_page'], 'https://data.humdata.org/signals')
+            self.assertEqual(sprint_rows['seed-25']['notes'], 'Custom analyst note')
 
     def test_verification_sprint_refreshes_comtrade_portal_host(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -847,6 +1012,74 @@ class BootstrapTests(unittest.TestCase):
             self.assertTrue(Path(result['collection_run_results']).exists())
             self.assertTrue((normalized_dir / 'seed-01.json').exists())
 
+    def test_collect_ready_action_requeues_noncurrent_tier1_manifest_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            plans_dir = tmp_path / 'plans'
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-01'
+            normalized_dir = collection_dir / 'normalized'
+            plans_dir.mkdir(parents=True, exist_ok=True)
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+
+            local_source = tmp_path / 'source.html'
+            local_source.write_text('<html><body>requeued baseline</body></html>\n')
+            (plans_dir / 'recent_accounting.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,region_or_country,refresh_cadence,expected_recency_window,last_checked_utc,last_published_date,latest_period_covered,claim_date_utc,recency_status,owner,evidence_link,evidence_path,status,next_check_due_utc,next_action,notes,url',
+                        f'seed-01,1,Local baseline,humanitarian,tier1,Egypt,weekly,8 days,2026-03-25T00:00:00Z,2026-03-10,,,due_now,source_monitor,{local_source.as_uri()},,in_review,2026-04-02T00:00:00Z,Refresh the row,Requeue fixture,{local_source.as_uri()}',
+                    ]
+                )
+                + '\n'
+            )
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-01,1,Local baseline,humanitarian,tier1,baseline,automatable,html_snapshot,html,Egypt,weekly,{raw_dir},{normalized_dir / "seed-01.json"},{collection_dir / "evidence-capture-log.csv"},,Local file adapter,{local_source.as_uri()}',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-01,seed-01,Local baseline,baseline,html_snapshot,high,Egypt,2026-03-25T00:00:00Z,{normalized_dir / "seed-01.json"},,completed,log_and_escalate,Completed row should be requeued',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(plans_dir),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            self.assertEqual(result['processed_runs'], 1)
+            self.assertEqual(result['completed_runs'], 1)
+            self.assertTrue((normalized_dir / 'seed-01.json').exists())
+
     def test_collect_ready_action_extracts_unhcr_document_index_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -934,6 +1167,378 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['verification_updates']['latest_period_covered'], '2026-03-09/2026-03-15')
             self.assertEqual(payload['verification_updates']['evidence_link'], 'https://data.unhcr.org/en/documents/details/121604')
 
+    def test_collect_ready_action_extracts_unhcr_period_from_pdf_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-03'
+            normalized_dir = collection_dir / 'normalized'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+
+            index_html = (
+                '<html><body>'
+                '<li class="searchResultItem -_doc media -table">'
+                '<div class="searchResultItem_content media_body">'
+                '<h2 class="searchResultItem_title"><a target="_blank" href="https://data.unhcr.org/en/documents/details/121604">'
+                'Middle East Situation Lebanon - Flash Update #2</a></h2>'
+                '<div class="searchResultItem_download"><a class="searchResultItem_download_link" href="https://data.unhcr.org/en/documents/download/121604" data-title="Middle East Situation Lebanon - Flash Update #2">Download</a></div>'
+                '<div class="searchResultItem_body">Middle East Situation Lebanon - Flash Update #2</div>'
+                '<span class="searchResultItem_date">Publish date: <b>16 March 2026</b><br>Create date: <b>16 March 2026</b></span>'
+                '</div></li>'
+                '</body></html>'
+            )
+            detail_html = '<html><body><p>Upload date: 16 March 2026</p><p>No issue period on the detail page.</p></body></html>'
+            pdf_body = b'%PDF-1.4 fixture'
+
+            def fake_fetch(url: str, raw_path: Path) -> dict[str, object]:
+                if url == 'https://data.unhcr.org/en/country/lbn':
+                    body = index_html.encode('utf-8')
+                    content_type = 'text/html; charset=UTF-8'
+                elif url == 'https://data.unhcr.org/en/documents/details/121604':
+                    body = detail_html.encode('utf-8')
+                    content_type = 'text/html; charset=UTF-8'
+                elif url == 'https://data.unhcr.org/en/documents/download/121604':
+                    body = pdf_body
+                    content_type = 'application/pdf'
+                else:
+                    raise AssertionError(f'unexpected url: {url}')
+                raw_path.parent.mkdir(parents=True, exist_ok=True)
+                raw_path.write_bytes(body)
+                return {
+                    'status_code': 200,
+                    'content_type': content_type,
+                    'bytes_written': len(body),
+                    'checksum_sha256': 'fixture',
+                }
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-03,3,UNHCR Lebanon reporting hub,humanitarian,tier1,baseline,automatable,unhcr_document_index,html/pdf,Lebanon,weekly,{raw_dir},{normalized_dir / "seed-03.json"},{collection_dir / "evidence-capture-log.csv"},,UNHCR index adapter,https://data.unhcr.org/en/country/lbn',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-03,seed-03,UNHCR Lebanon reporting hub,baseline,unhcr_document_index,high,Lebanon,2026-03-25T00:00:00Z,{normalized_dir / "seed-03.json"},,ready,log_and_escalate,UNHCR test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(tmp_path / 'plans'),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            with (
+                patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch),
+                patch.object(bootstrap, 'pdftotext_content', return_value='Flash Update #2 9 – 15 March 2026'),
+            ):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-03.json').read_text())
+            self.assertEqual(payload['verification_updates']['latest_period_covered'], '2026-03-09/2026-03-15')
+            self.assertTrue(payload['tertiary_raw_path'].endswith('run-seed-03-document.pdf'))
+            self.assertIn('linked PDF fallback', payload['verification_updates']['notes'])
+
+    def test_collect_ready_action_prefers_newer_unhcr_as_of_update(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-03'
+            normalized_dir = collection_dir / 'normalized'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+
+            index_html = (
+                '<html><body>'
+                '<li class="searchResultItem -_doc media -table">'
+                '<div class="searchResultItem_content media_body">'
+                '<h2 class="searchResultItem_title"><a target="_blank" href="https://data.unhcr.org/en/documents/details/121699">'
+                'Middle East Situation - as of 24 March 2026</a></h2>'
+                '<div class="searchResultItem_download"><a class="searchResultItem_download_link" href="https://data.unhcr.org/en/documents/download/121699" data-title="Middle East Situation - as of 24 March 2026">Download</a></div>'
+                '<div class="searchResultItem_body"></div>'
+                '<span class="searchResultItem_date">Publish date: <b>25 March 2026</b><br>Create date: <b>25 March 2026</b></span>'
+                '</div></li>'
+                '<li class="searchResultItem -_doc media -table">'
+                '<div class="searchResultItem_content media_body">'
+                '<h2 class="searchResultItem_title"><a target="_blank" href="https://data.unhcr.org/en/documents/details/121604">'
+                'Middle East Situation Lebanon - Flash Update #2</a></h2>'
+                '<div class="searchResultItem_download"><a class="searchResultItem_download_link" href="https://data.unhcr.org/en/documents/download/121604" data-title="Middle East Situation Lebanon - Flash Update #2">Download</a></div>'
+                '<div class="searchResultItem_body">Middle East Situation Lebanon - Flash Update #2</div>'
+                '<span class="searchResultItem_date">Publish date: <b>16 March 2026</b><br>Create date: <b>16 March 2026</b></span>'
+                '</div></li>'
+                '</body></html>'
+            )
+            detail_html = '<html><body><p>Upload date: 25 March 2026</p></body></html>'
+
+            def fake_fetch(url: str, raw_path: Path) -> dict[str, object]:
+                if url == 'https://data.unhcr.org/en/country/lbn':
+                    body = index_html.encode('utf-8')
+                    content_type = 'text/html; charset=UTF-8'
+                elif url == 'https://data.unhcr.org/en/documents/details/121699':
+                    body = detail_html.encode('utf-8')
+                    content_type = 'text/html; charset=UTF-8'
+                else:
+                    raise AssertionError(f'unexpected url: {url}')
+                raw_path.parent.mkdir(parents=True, exist_ok=True)
+                raw_path.write_bytes(body)
+                return {
+                    'status_code': 200,
+                    'content_type': content_type,
+                    'bytes_written': len(body),
+                    'checksum_sha256': 'fixture',
+                }
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-03,3,UNHCR Lebanon reporting hub,humanitarian,tier1,baseline,automatable,unhcr_document_index,html/pdf,Lebanon,weekly,{raw_dir},{normalized_dir / "seed-03.json"},{collection_dir / "evidence-capture-log.csv"},,UNHCR index adapter,https://data.unhcr.org/en/country/lbn',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-03,seed-03,UNHCR Lebanon reporting hub,baseline,unhcr_document_index,high,Lebanon,2026-03-25T00:00:00Z,{normalized_dir / "seed-03.json"},,ready,log_and_escalate,UNHCR as-of update test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(tmp_path / 'plans'),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            with patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-03.json').read_text())
+            self.assertEqual(payload['document_id'], '121699')
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2026-03-25')
+            self.assertEqual(payload['verification_updates']['latest_period_covered'], '2026-03-24')
+            self.assertEqual(payload['verification_updates']['evidence_link'], 'https://data.unhcr.org/en/documents/details/121699')
+
+    def test_collect_ready_action_extracts_unhcr_egypt_arrivals_update(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-01'
+            normalized_dir = collection_dir / 'normalized'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+
+            index_html = (
+                '<html><body>'
+                '<li class="searchResultItem -_doc media -table">'
+                '<div class="searchResultItem_content media_body">'
+                '<h2 class="searchResultItem_title"><a target="_blank" href="https://data.unhcr.org/en/documents/details/121681">'
+                'Egypt: New Arrivals from Sudan as of 19 March 2026</a></h2>'
+                '<div class="searchResultItem_download"><a class="searchResultItem_download_link" href="https://data.unhcr.org/en/documents/download/121681" data-title="Egypt: New Arrivals from Sudan as of 19 March 2026">Download</a></div>'
+                '<div class="searchResultItem_body"></div>'
+                '<span class="searchResultItem_date">Publish date: <b>23 March 2026</b><br>Create date: <b>24 March 2026</b></span>'
+                '</div></li>'
+                '</body></html>'
+            )
+            detail_html = '<html><body><p>Upload date: 24 March 2026</p></body></html>'
+            search_url = (
+                'https://data.unhcr.org/en/search?direction=desc&geo_id=1&page=1&sector=0&'
+                'sector_json=%7B%220%22%3A+%220%22%7D&sort=publishDate&sv_id=0&type%5B0%5D=document'
+            )
+
+            def fake_fetch(url: str, raw_path: Path) -> dict[str, object]:
+                if url == search_url:
+                    body = index_html.encode('utf-8')
+                    content_type = 'text/html; charset=UTF-8'
+                elif url == 'https://data.unhcr.org/en/documents/details/121681':
+                    body = detail_html.encode('utf-8')
+                    content_type = 'text/html; charset=UTF-8'
+                else:
+                    raise AssertionError(f'unexpected url: {url}')
+                raw_path.parent.mkdir(parents=True, exist_ok=True)
+                raw_path.write_bytes(body)
+                return {
+                    'status_code': 200,
+                    'content_type': content_type,
+                    'bytes_written': len(body),
+                    'checksum_sha256': 'fixture',
+                }
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-01,1,UNHCR Egypt data portal,humanitarian,tier1,baseline,automatable,unhcr_document_index,html/pdf,Egypt,weekly,{raw_dir},{normalized_dir / "seed-01.json"},{collection_dir / "evidence-capture-log.csv"},,UNHCR Egypt index adapter,https://data.unhcr.org/en/country/egy',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-01,seed-01,UNHCR Egypt data portal,baseline,unhcr_document_index,high,Egypt,2026-03-28T00:00:00Z,{normalized_dir / "seed-01.json"},,ready,log_and_escalate,UNHCR Egypt arrivals test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(tmp_path / 'plans'),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            with patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-01.json').read_text())
+            self.assertEqual(payload['document_id'], '121681')
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2026-03-23')
+            self.assertEqual(payload['verification_updates']['latest_period_covered'], '2026-03-19')
+            self.assertEqual(payload['verification_updates']['evidence_link'], 'https://data.unhcr.org/en/documents/details/121681')
+
+    def test_collect_ready_action_extracts_hdx_hapi_faq_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-24'
+            normalized_dir = collection_dir / 'normalized'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+
+            faq_url = 'https://centre.humdata.org/ufaqs/how-up-to-date-is-the-data-in-hdx-hapi/'
+            changelog_url = 'https://hdx-hapi.readthedocs.io/en/latest/changelog/'
+            faq_html = (
+                '<html><body>'
+                '<p>HDX HAPI is updated daily from the source data. The update frequency of each source dataset varies from daily, weekly, yearly and as needed.</p>'
+                '</body></html>'
+            )
+            changelog_html = '<html><body><h3 id="2025-09-15">2025-09-15</h3></body></html>'
+
+            def fake_fetch(url: str, raw_path: Path) -> dict[str, object]:
+                if url == faq_url:
+                    body = faq_html.encode('utf-8')
+                elif url == changelog_url:
+                    body = changelog_html.encode('utf-8')
+                else:
+                    raise AssertionError(f'unexpected url: {url}')
+                raw_path.parent.mkdir(parents=True, exist_ok=True)
+                raw_path.write_bytes(body)
+                return {
+                    'status_code': 200,
+                    'content_type': 'text/html; charset=UTF-8',
+                    'bytes_written': len(body),
+                    'checksum_sha256': 'fixture',
+                }
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-24,24,HDX Humanitarian API,humanitarian_feed,tier1,supporting_proxy,automatable,hdx_hapi_changelog,html,Global,weekly,{raw_dir},{normalized_dir / "seed-24.json"},{collection_dir / "evidence-capture-log.csv"},,HDX HAPI adapter,https://data.humdata.org/hapi',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-24,seed-24,HDX Humanitarian API,supporting_proxy,hdx_hapi_changelog,high,Global,2026-03-25T00:00:00Z,{normalized_dir / "seed-24.json"},,ready,log_and_escalate,HDX HAPI test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(tmp_path / 'plans'),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            with (
+                patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch),
+                patch.object(bootstrap, 'requests_head_last_modified', return_value='2026-03-25'),
+            ):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-24.json').read_text())
+            self.assertEqual(payload['adapter_type'], 'hdx_hapi_changelog')
+            self.assertEqual(payload['metadata_source_url'], faq_url)
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2026-03-25')
+            self.assertEqual(payload['verification_updates']['status'], 'in_review')
+            self.assertEqual(payload['verification_updates']['evidence_link'], faq_url)
+            self.assertTrue(payload['secondary_raw_path'].endswith('run-seed-24-changelog.html'))
+
     def test_collect_ready_action_extracts_ipc_lebanon_analysis_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -1007,6 +1612,79 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['verification_updates']['last_published_date'], '2025-12-23')
             self.assertEqual(payload['verification_updates']['latest_period_covered'], '2025-11/2026-07')
 
+    def test_collect_ready_action_extracts_ipc_lebanon_analysis_from_fallback_when_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-07'
+            normalized_dir = collection_dir / 'normalized'
+            plans_dir = tmp_path / 'plans'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+            plans_dir.mkdir(parents=True, exist_ok=True)
+
+            (plans_dir / 'source_verification_findings.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,last_checked_utc,last_published_date,latest_period_covered,claim_date_utc,owner,evidence_link,evidence_path,status,next_action,notes',
+                        'seed-07,2026-03-27T00:00:00Z,2025-12-23,2025-11/2026-07,,,,in_review,Watch the IPC page,Verified against the IPC Lebanon analysis page released on 2025-12-23 with validity 2025-11-01 to 2026-07-31 and linked report IPC_Lebanon_Acute_Food_Insecurity_Nov2025_July2026_Report.pdf.',
+                    ]
+                )
+                + '\n'
+            )
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f"seed-07,7,IPC Lebanon analysis,humanitarian,tier1,baseline,automatable,ipc_lebanon_analysis,html,Lebanon,periodic,{raw_dir},{normalized_dir / 'seed-07.json'},{collection_dir / 'evidence-capture-log.csv'},,IPC Lebanon analysis adapter,https://example.test/ipc-analysis",
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f"run-seed-07,seed-07,IPC Lebanon analysis,baseline,ipc_lebanon_analysis,high,Lebanon,2026-03-26T00:00:00Z,{normalized_dir / 'seed-07.json'},,ready,log_and_escalate,IPC Lebanon analysis fallback test run",
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(plans_dir),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            def fake_fetch(url: str, destination: Path) -> dict[str, object]:
+                raise bootstrap.HTTPError(url, 403, 'Forbidden', None, None)
+
+            with patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-07.json').read_text())
+            self.assertEqual(payload['capture_status'], 'completed')
+            self.assertEqual(payload['metadata_source_url'], 'https://example.test/ipc-analysis')
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2025-12-23')
+            self.assertEqual(payload['verification_updates']['latest_period_covered'], '2025-11/2026-07')
+            self.assertEqual(payload['verification_updates']['status'], 'in_review')
+
     def test_collect_ready_action_extracts_ipc_gaza_snapshot_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -1064,6 +1742,83 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['verification_updates']['last_published_date'], '2025-12-19')
             self.assertEqual(payload['verification_updates']['latest_period_covered'], 'October 2025 - April 2026')
 
+    def test_collect_ready_action_extracts_iom_dtm_sudan_from_recent_accounting_when_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-02'
+            normalized_dir = collection_dir / 'normalized'
+            plans_dir = tmp_path / 'plans'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+            plans_dir.mkdir(parents=True, exist_ok=True)
+
+            source_url = 'https://dtm.iom.int/sudan'
+            (plans_dir / 'recent_accounting.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,region_or_country,refresh_cadence,expected_recency_window,last_checked_utc,last_published_date,latest_period_covered,claim_date_utc,recency_status,owner,evidence_link,mirror_evidence_link,evidence_path,status,next_check_due_utc,next_action,notes,url',
+                        f'seed-02,2,IOM DTM Sudan,humanitarian,tier1,Sudan/Regional,weekly,8 days,2026-03-26T10:00:00Z,2026-03-26,2026-03-26,2026-03-26T10:00:00Z,current,source_monitor,{source_url},,,in_review,2026-04-03T10:00:00Z,Follow the IOM Crisis Response Plan 2026 for returnee tracking (3M+) and IDP baseline update (10M+).,Verified on 2026-03-26. IOM reports 3M+ returnees; total displacement ~15M; Port Sudan is a major IDP hub.,{source_url}',
+                    ]
+                )
+                + '\n'
+            )
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f"seed-02,2,IOM DTM Sudan,humanitarian,tier1,baseline,automatable,iom_dtm_sudan,html/pdf,Sudan/Regional,weekly,{raw_dir},{normalized_dir / 'seed-02.json'},{collection_dir / 'evidence-capture-log.csv'},,IOM DTM Sudan adapter,{source_url}",
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f"run-seed-02,seed-02,IOM DTM Sudan,baseline,iom_dtm_sudan,high,Sudan/Regional,2026-03-28T00:00:00Z,{normalized_dir / 'seed-02.json'},,ready,log_and_escalate,IOM DTM Sudan blocked-source fallback test run",
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(plans_dir),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            def fake_fetch(url: str, destination: Path) -> dict[str, object]:
+                raise bootstrap.HTTPError(url, 403, 'Forbidden', None, None)
+
+            with patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            self.assertEqual(result['staged_external_runs'], 0)
+            payload = json.loads((normalized_dir / 'seed-02.json').read_text())
+            self.assertEqual(payload['capture_status'], 'completed')
+            self.assertEqual(payload['adapter_type'], 'iom_dtm_sudan')
+            self.assertEqual(payload['metadata_source_url'], source_url)
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2026-03-26')
+            self.assertEqual(payload['verification_updates']['latest_period_covered'], '2026-03-26')
+            self.assertEqual(payload['verification_updates']['evidence_link'], source_url)
+            self.assertIn('public page was blocked', payload['verification_updates']['notes'])
+
     def test_collect_ready_action_extracts_ashdod_port_financials_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -1120,6 +1875,483 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['adapter_type'], 'ashdod_port_financials')
             self.assertEqual(payload['verification_updates']['last_published_date'], '2025-11-23')
             self.assertEqual(payload['verification_updates']['latest_period_covered'], '2025-09')
+
+    def test_collect_ready_action_extracts_ashdod_port_financials_from_anyflip_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-33'
+            normalized_dir = collection_dir / 'normalized'
+            plans_dir = tmp_path / 'plans'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+            plans_dir.mkdir(parents=True, exist_ok=True)
+
+            fallback_url = 'https://anyflip.com/hvel/gwqa/basic'
+            fallback_html = (
+                '<html><head>'
+                '<title>תוצאות כספיות והתפתחויות תשעת חודשים ראשונים של שנת 2025 - Flip eBook Pages 1-25 | AnyFlip</title>'
+                '<meta name="description" content="View flipping ebook version of תוצאות כספיות והתפתחויות תשעת חודשים ראשונים של שנת 2025 published by Ashdod Port on 2025-11-23." />'
+                '<script type="application/ld+json">{"datePublished":"2025-11-23","author":{"name":"Ashdod Port"}}</script>'
+                '</head><body></body></html>'
+            )
+            (plans_dir / 'source_verification_findings.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,last_checked_utc,last_published_date,latest_period_covered,claim_date_utc,owner,evidence_link,evidence_path,status,next_action,notes',
+                        f'seed-33,2026-03-27T00:00:00Z,2025-11-23,2025-09,,,{fallback_url},,in_review,Track fallback,Existing fallback note',
+                    ]
+                )
+                + '\n'
+            )
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-33,33,Ashdod Port Financial and Operating Updates,market_monitor,tier1,supporting_proxy,automatable,ashdod_port_financials,html,Israel,quarterly,{raw_dir},{normalized_dir / "seed-33.json"},{collection_dir / "evidence-capture-log.csv"},,Ashdod financials adapter,https://www.ashdodport.co.il/about/financial-information/Pages/default.aspx',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-33,seed-33,Ashdod Port Financial and Operating Updates,supporting_proxy,ashdod_port_financials,high,Israel,2026-03-26T00:00:00Z,{normalized_dir / "seed-33.json"},,ready,log_and_escalate,Ashdod financials fallback test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(plans_dir),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            def fake_fetch(url: str, destination: Path) -> dict[str, object]:
+                if 'ashdodport.co.il' in url:
+                    raise bootstrap.HTTPError(url, 403, 'Forbidden', None, None)
+                if url == fallback_url:
+                    body = fallback_html.encode('utf-8')
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_bytes(body)
+                    return {
+                        'status_code': 200,
+                        'content_type': 'text/html; charset=utf-8',
+                        'bytes_written': len(body),
+                        'checksum_sha256': 'fixture-fallback',
+                    }
+                raise AssertionError(f'unexpected url: {url}')
+
+            with patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-33.json').read_text())
+            self.assertEqual(payload['adapter_type'], 'ashdod_port_financials')
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2025-11-23')
+            self.assertEqual(payload['verification_updates']['latest_period_covered'], '2025-09')
+            self.assertEqual(
+                payload['verification_updates']['evidence_link'],
+                'https://www.ashdodport.co.il/about/financial-information/Pages/default.aspx',
+            )
+            self.assertEqual(payload['mirror_evidence_link'], fallback_url)
+            self.assertEqual(payload['verification_updates']['mirror_evidence_link'], fallback_url)
+            self.assertTrue(payload['secondary_raw_path'].endswith('run-seed-33-fallback.html'))
+
+    def test_collect_ready_action_extracts_ashdod_mirror_from_fallback_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-33'
+            normalized_dir = collection_dir / 'normalized'
+            plans_dir = tmp_path / 'plans'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+            plans_dir.mkdir(parents=True, exist_ok=True)
+
+            source_url = 'https://www.ashdodport.co.il/about/financial-information/Pages/default.aspx'
+            fallback_url = 'https://anyflip.com/hvel/gwqa/basic'
+            fallback_html = (
+                '<html><head>'
+                '<title>תוצאות כספיות והתפתחויות תשעת חודשים ראשונים של שנת 2025 - Flip eBook Pages 1-25 | AnyFlip</title>'
+                '<meta name="description" content="View flipping ebook version of תוצאות כספיות והתפתחויות תשעת חודשים ראשונים של שנת 2025 published by Ashdod Port on 2025-11-23." />'
+                '<script type="application/ld+json">{"datePublished":"2025-11-23","author":{"name":"Ashdod Port"}}</script>'
+                '</head><body></body></html>'
+            )
+            (plans_dir / 'source_verification_findings.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,last_checked_utc,last_published_date,latest_period_covered,claim_date_utc,owner,evidence_link,evidence_path,status,next_action,notes',
+                        (
+                            'seed-33,2026-03-27T00:00:00Z,2025-11-23,2025-09,,,'
+                            f'{source_url},,in_review,Track fallback,'
+                            f'Ashdod Port Financial and Operating Updates official hub was blocked; metadata was parsed from the AnyFlip mirror fallback at {fallback_url}.'
+                        ),
+                    ]
+                )
+                + '\n'
+            )
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-33,33,Ashdod Port Financial and Operating Updates,market_monitor,tier1,supporting_proxy,automatable,ashdod_port_financials,html,Israel,quarterly,{raw_dir},{normalized_dir / "seed-33.json"},{collection_dir / "evidence-capture-log.csv"},,Ashdod financials adapter,{source_url}',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-33,seed-33,Ashdod Port Financial and Operating Updates,supporting_proxy,ashdod_port_financials,high,Israel,2026-03-26T00:00:00Z,{normalized_dir / "seed-33.json"},,ready,log_and_escalate,Ashdod financials notes fallback test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(plans_dir),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            def fake_fetch(url: str, destination: Path) -> dict[str, object]:
+                if url == source_url:
+                    raise bootstrap.HTTPError(url, 403, 'Forbidden', None, None)
+                if url == fallback_url:
+                    body = fallback_html.encode('utf-8')
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.write_bytes(body)
+                    return {
+                        'status_code': 200,
+                        'content_type': 'text/html; charset=utf-8',
+                        'bytes_written': len(body),
+                        'checksum_sha256': 'fixture-fallback-notes',
+                    }
+                raise AssertionError(f'unexpected url: {url}')
+
+            with patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-33.json').read_text())
+            self.assertEqual(payload['mirror_evidence_link'], fallback_url)
+            self.assertEqual(payload['verification_updates']['evidence_link'], source_url)
+            self.assertEqual(payload['verification_updates']['mirror_evidence_link'], fallback_url)
+            self.assertTrue(payload['secondary_raw_path'].endswith('run-seed-33-fallback.html'))
+
+    def test_collect_ready_action_extracts_wfp_factsheet_page_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-08'
+            normalized_dir = collection_dir / 'normalized'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+
+            page_url = 'https://www.wfp.org/publications-WFP-Lebanon-Programme-Factsheets-2025'
+            pdf_url = 'https://docs.wfp.org/api/documents/WFP-0000169349/download/'
+            page_html = (
+                '<html><head>'
+                '<title>WFP Lebanon Programme Factsheets - September 2025 | World Food Programme</title>'
+                '<script>dataLayer.push({"content_publication_date":"2025-10-08"});</script>'
+                '</head><body>'
+                '<div class="field field--field-publication-date"><time datetime="2025-10-08T12:00:00Z">8 October 2025</time></div>'
+                '<h1>WFP Lebanon Programme Factsheets - September 2025</h1>'
+                '<a href="https://docs.wfp.org/api/documents/WFP-0000169349/download/" class="button-new button-new--primary" aria-label="Open in English">English</a>'
+                '</body></html>'
+            )
+            pdf_body = b'%PDF-1.4 fixture'
+
+            def fake_fetch(url: str, destination: Path) -> dict[str, object]:
+                if url == page_url:
+                    body = page_html.encode('utf-8')
+                    content_type = 'text/html; charset=utf-8'
+                elif url == pdf_url:
+                    body = pdf_body
+                    content_type = 'application/pdf'
+                else:
+                    raise AssertionError(f'unexpected url: {url}')
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(body)
+                return {
+                    'status_code': 200,
+                    'content_type': content_type,
+                    'bytes_written': len(body),
+                    'checksum_sha256': 'fixture-wfp',
+                }
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-08,8,WFP Retail and Markets factsheet,market,tier1,supporting_proxy,automatable,wfp_lebanon_factsheet_pdf,html/pdf,Lebanon,periodic,{raw_dir},{normalized_dir / "seed-08.json"},{collection_dir / "evidence-capture-log.csv"},,WFP factsheet adapter,{page_url}',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-08,seed-08,WFP Retail and Markets factsheet,supporting_proxy,wfp_lebanon_factsheet_pdf,high,Lebanon,2026-03-26T00:00:00Z,{normalized_dir / "seed-08.json"},,ready,log_and_escalate,WFP factsheet test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(tmp_path / 'plans'),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            with (
+                patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch),
+                patch.object(bootstrap, 'pdfinfo_report_date', return_value='2025-10-06'),
+                patch.object(bootstrap, 'pdftotext_content', return_value='WFP Lebanon - September 2025'),
+            ):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-08.json').read_text())
+            self.assertEqual(payload['adapter_type'], 'wfp_lebanon_factsheet_pdf')
+            self.assertEqual(payload['metadata_source_url'], page_url)
+            self.assertEqual(payload['document_download_url'], pdf_url)
+            self.assertEqual(payload['document_title'], 'WFP Lebanon Programme Factsheets - September 2025')
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2025-10-08')
+            self.assertEqual(payload['verification_updates']['latest_period_covered'], '2025-09')
+            self.assertEqual(payload['verification_updates']['evidence_link'], page_url)
+            self.assertTrue(payload['secondary_raw_path'].endswith('run-seed-08-page.html'))
+
+    def test_collect_ready_action_extracts_unctad_maritime_insights_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-29'
+            normalized_dir = collection_dir / 'normalized'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+
+            theme_url = 'https://unctadstat.unctad.org/insights/theme/246'
+            metadata_url = 'https://unctadstat.unctad.org/datacentre/dataviewer/US.LSCI'
+            theme_html = (
+                '<html><body><article>'
+                '<h3 class="dataviz-heading__title">Mauritania, Sierra Leone, and Cameroon saw the largest annual connectivity increases in the fourth quarter of 2025</h3>'
+                '<a href="/datacentre/dataviewer/US.LSCI">Open data centre</a>'
+                '<p>In the fourth quarter of 2025 compared to the same period in 2024, connectivity gains were more widespread than losses.</p>'
+                '<span class="updatedate__content">28 January 2026</span>'
+                '</article></body></html>'
+            )
+            metadata_html = '<html><head><title>UNCTADstat Data Centre</title></head><body>US.LSCI</body></html>'
+
+            def fake_fetch(url: str, destination: Path) -> dict[str, object]:
+                if url == theme_url:
+                    body = theme_html.encode('utf-8')
+                elif url == metadata_url:
+                    body = metadata_html.encode('utf-8')
+                else:
+                    raise AssertionError(f'unexpected url: {url}')
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(body)
+                return {
+                    'status_code': 200,
+                    'content_type': 'text/html; charset=utf-8',
+                    'bytes_written': len(body),
+                    'checksum_sha256': 'fixture-unctad',
+                }
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-29,29,UNCTAD Maritime Transport Insights,market_monitor,tier1,supporting_proxy,automatable,unctad_maritime_insights,html,Global,periodic,{raw_dir},{normalized_dir / "seed-29.json"},{collection_dir / "evidence-capture-log.csv"},,UNCTAD maritime adapter,{theme_url}',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-29,seed-29,UNCTAD Maritime Transport Insights,supporting_proxy,unctad_maritime_insights,high,Global,2026-03-26T00:00:00Z,{normalized_dir / "seed-29.json"},,ready,log_and_escalate,UNCTAD maritime test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(tmp_path / 'plans'),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            with patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-29.json').read_text())
+            self.assertEqual(payload['adapter_type'], 'unctad_maritime_insights')
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2026-01-28')
+            self.assertEqual(payload['verification_updates']['latest_period_covered'], '2025-12')
+            self.assertEqual(payload['verification_updates']['evidence_link'], metadata_url)
+            self.assertTrue(payload['secondary_raw_path'].endswith('run-seed-29-datacentre.html'))
+
+    def test_collect_ready_action_extracts_sca_navigation_news_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-30'
+            normalized_dir = collection_dir / 'normalized'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+
+            index_url = 'https://www.suezcanal.gov.eg/English/MediaCenter/News/Pages/default.aspx'
+            detail_url = 'https://www.suezcanal.gov.eg/English/MediaCenter/News/Pages/Sca_3-3-2026.aspx'
+            index_html = (
+                '<xml>'
+                '<Row Title="Traffic through the Canal is flowing normally in both directions" '
+                'PublishingStartDate="3 Mar 2026" '
+                'NewsCategory_x003a_Title="Navigation News" '
+                'ServerUrl="/English/MediaCenter/News/Pages/Sca_3-3-2026.aspx"></Row>'
+                '</xml>'
+            )
+            detail_html = (
+                '<html><head><title>SCA - Traffic through the Canal is flowing normally in both directions</title></head>'
+                '<body>'
+                '<span class="bold" id="spnDate">3 March 2026</span>'
+                '<div>Navigation News</div>'
+                '<div>The Suez Canal witnesses the transit of 56 vessels today at a total gross tonnage of 2.6 million tons.</div>'
+                '<div>The Canal has witnessed today the transit of 56 vessels in both directions at a total gross tonnage of 2.6 million tons; '
+                '24 vessels in the nourthern convoy at a total gross tonnage of 1 million tons and 32 vessels in the southern convoy at a total gross tonnage of 1.6 million tons.</div>'
+                '<div>It is worth noting that, during the past three days, 100 vessels transited through the Canal, with a total net tonnage of 3.8 million tons.</div>'
+                '</body></html>'
+            )
+
+            def fake_fetch(url: str, destination: Path) -> dict[str, object]:
+                if url == index_url:
+                    body = index_html.encode('utf-8')
+                elif url == detail_url:
+                    body = detail_html.encode('utf-8')
+                else:
+                    raise AssertionError(f'unexpected url: {url}')
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(body)
+                return {
+                    'status_code': 200,
+                    'content_type': 'text/html; charset=utf-8',
+                    'bytes_written': len(body),
+                    'checksum_sha256': 'fixture-sca',
+                }
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-30,30,Suez Canal Authority Navigation News,market_monitor,tier1,supporting_proxy,automatable,sca_navigation_news,html,Regional,periodic,{raw_dir},{normalized_dir / "seed-30.json"},{collection_dir / "evidence-capture-log.csv"},,SCA navigation adapter,{index_url}',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-30,seed-30,Suez Canal Authority Navigation News,supporting_proxy,sca_navigation_news,high,Regional,2026-03-26T00:00:00Z,{normalized_dir / "seed-30.json"},,ready,log_and_escalate,SCA navigation test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(tmp_path / 'plans'),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            with patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-30.json').read_text())
+            self.assertEqual(payload['adapter_type'], 'sca_navigation_news')
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2026-03-03')
+            self.assertEqual(payload['verification_updates']['claim_date_utc'], '2026-03-03')
+            self.assertEqual(payload['daily_vessel_count'], '56')
+            self.assertEqual(payload['daily_gross_tonnage_mtons'], '2.6')
+            self.assertEqual(payload['rolling_three_day_vessel_count'], '100')
+            self.assertEqual(payload['rolling_three_day_gross_tonnage_mtons'], '3.8')
+            self.assertEqual(payload['verification_updates']['evidence_link'], detail_url)
 
     def test_collect_ready_action_extracts_israel_cbs_price_indices_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1394,6 +2626,262 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['verification_updates']['last_published_date'], '2025-09-24')
             self.assertEqual(payload['verification_updates']['evidence_link'], report_pdf.as_uri())
 
+    def test_collect_ready_action_extracts_hdx_signals_dataset_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-25'
+            normalized_dir = collection_dir / 'normalized'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+
+            api_url = 'https://data.humdata.org/api/3/action/package_show?id=hdx-signals'
+            package_payload = {
+                'success': True,
+                'result': {
+                    'name': 'hdx-signals',
+                    'title': 'HDX Signals',
+                    'metadata_modified': '2026-03-17T14:50:30.273874',
+                    'metadata_created': '2024-06-07T14:04:16.875037',
+                    'data_update_frequency': 7,
+                    'due_date': '2026-03-20T23:59:59',
+                    'update_status': 'needs_update',
+                    'resources': [
+                        {
+                            'name': 'hdx_signals.csv',
+                            'format': 'CSV',
+                            'last_modified': '2026-03-17T14:50:30.167678',
+                            'created': '2024-06-07T14:04:16.881913',
+                            'url': 'https://data.humdata.org/dataset/464950af/resource/49056751/download/hdx_signals.csv',
+                        },
+                    ],
+                },
+            }
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-25,25,HDX Signals,humanitarian_feed,tier1,supporting_proxy,automatable,hdx_dataset_metadata,html,Global,weekly,{raw_dir},{normalized_dir / "seed-25.json"},{collection_dir / "evidence-capture-log.csv"},,HDX Signals adapter,https://data.humdata.org/signals',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-25,seed-25,HDX Signals,supporting_proxy,hdx_dataset_metadata,high,Global,2026-03-25T00:00:00Z,{normalized_dir / "seed-25.json"},,ready,log_and_escalate,HDX Signals test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(tmp_path / 'plans'),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            def fake_fetch(url: str, destination: Path) -> dict[str, object]:
+                if url != api_url:
+                    raise AssertionError(f'unexpected url: {url}')
+                body = json.dumps(package_payload).encode('utf-8')
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(body)
+                return {
+                    'status_code': 200,
+                    'content_type': 'application/json',
+                    'bytes_written': len(body),
+                    'checksum_sha256': 'fixture-hdx-signals',
+                }
+
+            with patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-25.json').read_text())
+            self.assertEqual(payload['adapter_type'], 'hdx_dataset_metadata')
+            self.assertEqual(payload['dataset_name'], 'hdx-signals')
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2026-03-17')
+            self.assertEqual(payload['verification_updates']['evidence_link'], api_url)
+            self.assertEqual(payload['verification_updates']['status'], 'in_review')
+            self.assertEqual(payload['latest_resource_modified_date'], '2026-03-17')
+            self.assertEqual(payload['data_update_frequency'], '7')
+            self.assertEqual(payload['due_date'], '2026-03-20T23:59:59')
+            self.assertEqual(payload['update_status'], 'needs_update')
+            self.assertIn('Declared update frequency: every 7 day(s).', payload['verification_updates']['notes'])
+
+    def test_collect_ready_action_extracts_saudi_gastat_cpi_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-22'
+            normalized_dir = collection_dir / 'normalized'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+
+            gastat_page = tmp_path / 'gastat.html'
+            gastat_page.write_text(
+                '<html><body>'
+                '<h1>Consumer Price Index</h1>'
+                '<p class="fs-sm text-secondary"> Last Modified: 22/12/2025 12:42:02 PM</p>'
+                '</body></html>\n'
+            )
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-22,22,Saudi GASTAT Consumer Price Index,macro_price,tier1,supporting_proxy,automatable,saudi_gastat_cpi,html,Saudi Arabia,monthly,{raw_dir},{normalized_dir / "seed-22.json"},{collection_dir / "evidence-capture-log.csv"},,GASTAT CPI adapter,{gastat_page.as_uri()}',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-22,seed-22,Saudi GASTAT Consumer Price Index,supporting_proxy,saudi_gastat_cpi,high,Saudi Arabia,2026-03-25T00:00:00Z,{normalized_dir / "seed-22.json"},,ready,log_and_escalate,GASTAT CPI test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(tmp_path / 'plans'),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-22.json').read_text())
+            self.assertEqual(payload['adapter_type'], 'saudi_gastat_cpi')
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2025-12-22')
+            self.assertEqual(payload['verification_updates']['latest_period_covered'], '2025-11')
+            self.assertEqual(payload['verification_updates']['evidence_link'], gastat_page.as_uri())
+
+    def test_collect_ready_action_extracts_saudi_gastat_cpi_from_listing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-22'
+            normalized_dir = collection_dir / 'normalized'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+
+            listing_url = 'https://www.stats.gov.sa/en/statistics-tabs/-/categories/121421?category=121421&delta=20&start=1&tab=436312'
+            pdf_url = 'https://www.stats.gov.sa/documents/20117/2435267/CPI+Feb+2026-EN.pdf/b5bb5491-511c-d979-de0b-f84380966d1a?t=1773476710285'
+            listing_html = (
+                '<html><body>'
+                '<div class="box-body">'
+                '<span class="row-header">Consumer Price Index – February 2026</span>'
+                '<span class="th">2026</span>'
+                '<span class="th">Monthly</span>'
+                '<span class="th">February</span>'
+                '<div class="d-flex gap-2 align-items-center">'
+                '<a class="btn-link btn-white" href="/documents/20117/2435267/CPI+Feb+2026-EN.pdf/b5bb5491-511c-d979-de0b-f84380966d1a?t=1773476710285" target="_blank">PDF</a>'
+                '<a class="btn-link btn-white" href="/documents/20117/2435267/CPI+Tables-Feb+2026-AR-EN+%281%29.xlsx/239a9d5c-a963-7194-5e39-ce39f53dd31a?t=1773476597747" target="_blank">XLSX</a>'
+                '</div>'
+                '<!-- View Details Button -->'
+                '</div>'
+                '</body></html>\n'
+            )
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-22,22,Saudi GASTAT Consumer Price Index,macro_price,tier1,supporting_proxy,automatable,saudi_gastat_cpi,html,Saudi Arabia,monthly,{raw_dir},{normalized_dir / "seed-22.json"},{collection_dir / "evidence-capture-log.csv"},,GASTAT CPI adapter,https://stats.gov.sa/en/w/cpi-1',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-22,seed-22,Saudi GASTAT Consumer Price Index,supporting_proxy,saudi_gastat_cpi,high,Saudi Arabia,2026-03-25T00:00:00Z,{normalized_dir / "seed-22.json"},,ready,log_and_escalate,GASTAT CPI listing test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(tmp_path / 'plans'),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            def fake_fetch(url: str, destination: Path) -> dict[str, object]:
+                if url != listing_url:
+                    raise AssertionError(f'unexpected url: {url}')
+                body = listing_html.encode('utf-8')
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(body)
+                return {
+                    'status_code': 200,
+                    'content_type': 'text/html; charset=utf-8',
+                    'bytes_written': len(body),
+                    'checksum_sha256': 'fixture-gastat-listing',
+                }
+
+            with (
+                patch.object(bootstrap, 'fetch_direct_source', side_effect=fake_fetch),
+                patch.object(bootstrap, 'requests_head_last_modified', return_value='2026-03-14'),
+            ):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-22.json').read_text())
+            self.assertEqual(payload['adapter_type'], 'saudi_gastat_cpi')
+            self.assertEqual(payload['metadata_source_url'], listing_url)
+            self.assertEqual(payload['document_title'], 'Consumer Price Index – February 2026')
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2026-03-14')
+            self.assertEqual(payload['verification_updates']['latest_period_covered'], '2026-02')
+            self.assertEqual(payload['verification_updates']['evidence_link'], pdf_url)
+
     def test_collect_ready_action_extracts_lebanon_cas_cpi_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -1472,6 +2960,97 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['verification_updates']['last_published_date'], '2026-01-24')
             self.assertEqual(payload['verification_updates']['latest_period_covered'], '2025-11')
             self.assertEqual(payload['verification_updates']['evidence_link'], cpi_json.as_uri())
+
+    def test_collect_ready_action_prefers_newer_official_lebanon_cas_cpi_pdf(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-23'
+            normalized_dir = collection_dir / 'normalized'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+
+            cpi_page = tmp_path / 'cpi.html'
+            cpi_json = tmp_path / 'cpi_data.json'
+            official_pdf = tmp_path / 'CPI' / '2026' / '2-CPI_FEBRUARY2026.pdf'
+            official_pdf.parent.mkdir(parents=True, exist_ok=True)
+            official_pdf.write_bytes(b'%PDF-1.4 official cpi fixture\n')
+            cpi_page.write_text(
+                '<html><body><script>'
+                f'var cpiConfig = {{"jsonUrl":"{cpi_json.as_uri()}"}};'
+                '</script>'
+                f'<a href="{official_pdf.as_uri()}">February 2026 PDF</a>'
+                '</body></html>\n'
+            )
+            cpi_json.write_text(
+                json.dumps(
+                    {
+                        'weights': {},
+                        'entries': {
+                            '2025': {
+                                'October': {'consumer_price_index': 1.0},
+                                'November': {'consumer_price_index': 1.1},
+                            }
+                        },
+                    }
+                )
+                + '\n'
+            )
+
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-23,23,Lebanon CAS Consumer Price Index,macro_price,tier1,supporting_proxy,automatable,lebanon_cas_cpi,html/api,Lebanon,monthly,{raw_dir},{normalized_dir / "seed-23.json"},{collection_dir / "evidence-capture-log.csv"},,CAS CPI adapter,{cpi_page.as_uri()}',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-23,seed-23,Lebanon CAS Consumer Price Index,supporting_proxy,lebanon_cas_cpi,high,Lebanon,2026-03-25T00:00:00Z,{normalized_dir / "seed-23.json"},,ready,log_and_escalate,CAS CPI official PDF test run',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(tmp_path / 'plans'),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            def fake_last_modified(url: str) -> str:
+                if url == cpi_json.as_uri():
+                    return '2026-01-24'
+                if url == official_pdf.as_uri():
+                    return '2026-03-24'
+                return ''
+
+            with patch.object(bootstrap, 'requests_head_last_modified', side_effect=fake_last_modified):
+                result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-23.json').read_text())
+            self.assertEqual(payload['verification_updates']['last_published_date'], '2026-03-24')
+            self.assertEqual(payload['verification_updates']['latest_period_covered'], '2026-02')
+            self.assertEqual(payload['verification_updates']['evidence_link'], official_pdf.as_uri())
+            self.assertTrue(payload['tertiary_raw_path'])
 
     def test_collect_ready_action_continues_after_timeout_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1601,6 +3180,94 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(payload['capture_status'], 'staged_external')
             self.assertEqual(payload['query_count'], 0)
 
+    def test_collect_ready_action_matches_place_queries_to_district_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            collection_dir = tmp_path / 'collection'
+            raw_dir = collection_dir / 'raw' / 'seed-11'
+            normalized_dir = collection_dir / 'normalized'
+            plans_dir = tmp_path / 'plans'
+            collection_dir.mkdir(parents=True, exist_ok=True)
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            normalized_dir.mkdir(parents=True, exist_ok=True)
+            plans_dir.mkdir(parents=True, exist_ok=True)
+
+            (collection_dir / 'places-query-seeds.csv').write_text(
+                '\n'.join(
+                    [
+                        'query_id,country,district_name,place_source,place_type,search_mode,query_text,priority,status,notes',
+                        'gplaces-001,Egypt,Nasr City,Google Places API,bakery,text_search_then_details,bakery in Nasr City,high,ready,Fixture row',
+                        'gplaces-002,Egypt,Imbaba,Google Places API,cafe,text_search_then_details,cafe in Imbaba,high,ready,Fixture row',
+                        'gplaces-003,Lebanon,Beirut,Google Places API,bakery,text_search_then_details,bakery in Beirut,high,ready,Fixture row',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'source-adapter-registry.csv').write_text(
+                '\n'.join(
+                    [
+                        'source_id,rank,source_name,source_family,priority_tier,collection_stage,collection_mode,adapter_type,access_type,region_or_country,refresh_cadence,raw_landing_dir,normalized_output_path,evidence_log_path,query_seed_file,notes,url',
+                        f'seed-11,11,Google Places API,place,tier1,market_proxy,automatable,places_api_search,api,Egypt,weekly,{raw_dir},{normalized_dir / "seed-11.json"},{collection_dir / "evidence-capture-log.csv"},places-query-seeds.csv,Places request spec test,https://example.test/places',
+                    ]
+                )
+                + '\n'
+            )
+            (collection_dir / 'collection-run-manifest.csv').write_text(
+                '\n'.join(
+                    [
+                        'run_id,source_id,source_name,collection_stage,adapter_type,priority,district_scope,scheduled_run_utc,expected_artifact,query_seed_file,status,failure_action,notes',
+                        f'run-seed-11,seed-11,Google Places API,market_proxy,places_api_search,high,Nasr City; Imbaba,2026-03-25T00:00:00Z,{normalized_dir / "seed-11.json"},places-query-seeds.csv,ready,log_and_escalate,Place query matching test run',
+                    ]
+                )
+                + '\n'
+            )
+            (plans_dir / 'connector_readiness.csv').write_text(
+                '\n'.join(
+                    [
+                        'connector_id,status,priority,owner,source_id,source_name,adapter_type,region_or_country,query_seed_file,credential_state,last_checked_utc,next_action,notes,url',
+                        'CON-011,needs_credentials,high,proxy_accountant,seed-11,Google Places API,places_api_search,Regional,places-query-seeds.csv,api_key_required,,Configure an API key,Need credentials before live execution,https://developers.google.com/maps/documentation/places/web-service',
+                    ]
+                )
+                + '\n'
+            )
+            args = argparse.Namespace(
+                input=str(self.seed_path),
+                output_dir=str(tmp_path / 'artifacts'),
+                docs_csv=str(tmp_path / 'source-registry.csv'),
+                pack_dir=str(tmp_path / 'v0_1'),
+                plans_dir=str(plans_dir),
+                collection_dir=str(collection_dir),
+                briefing_dir=str(tmp_path / 'briefings'),
+                zone_name='Cairo/Giza pilot',
+                zone_country='Egypt',
+                analyst='system',
+                reviewer='pending_review',
+                max_runs=5,
+                version_prefix='preseed_sources_v',
+                force_version=1,
+                verbose=False,
+                launcher_mode='cli',
+            )
+
+            result = bootstrap.execute_action(args, action='collect_ready')
+
+            self.assertEqual(result['status'], 'ok')
+            payload = json.loads((normalized_dir / 'seed-11.json').read_text())
+            self.assertEqual(payload['capture_status'], 'staged_external')
+            self.assertEqual(payload['query_count'], 3)
+            self.assertEqual(payload['matched_queries'], 2)
+            self.assertEqual(payload['connector_status'], 'needs_credentials')
+            self.assertEqual(payload['credential_state'], 'api_key_required')
+            self.assertEqual(payload['connector_owner'], 'proxy_accountant')
+            raw_payload = json.loads((raw_dir / 'run-seed-11.json').read_text())
+            self.assertEqual(raw_payload['matched_query_count'], 2)
+            self.assertEqual(len(raw_payload['queries']), 2)
+            self.assertEqual({row['district_name'] for row in raw_payload['queries']}, {'Nasr City', 'Imbaba'})
+            self.assertEqual(raw_payload['connector_status'], 'needs_credentials')
+            self.assertEqual(raw_payload['credential_state'], 'api_key_required')
+            self.assertEqual(raw_payload['connector_owner'], 'proxy_accountant')
+            self.assertEqual(raw_payload['connector_next_action'], 'Configure an API key')
+
     def test_recent_accounting_action_syncs_findings_from_normalized_collection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
@@ -1624,6 +3291,7 @@ class BootstrapTests(unittest.TestCase):
                             'claim_date_utc': '',
                             'owner': '',
                             'evidence_link': 'https://data.humdata.org/api/3/action/package_show?id=global-market-monitor',
+                            'mirror_evidence_link': 'https://example.test/mirror/global-market-monitor',
                             'evidence_path': '',
                             'status': 'in_review',
                             'next_action': 'Review dataset resources for an explicit coverage-period marker after metadata sync.',
@@ -1661,7 +3329,9 @@ class BootstrapTests(unittest.TestCase):
                 accounting_rows = {row['source_id']: row for row in csv.DictReader(handle)}
 
             self.assertEqual(findings_rows['seed-27']['last_published_date'], '2026-03-20')
+            self.assertEqual(findings_rows['seed-27']['mirror_evidence_link'], 'https://example.test/mirror/global-market-monitor')
             self.assertEqual(accounting_rows['seed-27']['last_published_date'], '2026-03-20')
+            self.assertEqual(accounting_rows['seed-27']['mirror_evidence_link'], 'https://example.test/mirror/global-market-monitor')
             self.assertEqual(accounting_rows['seed-27']['recency_status'], 'current')
 
     def test_brief_zone_ingests_normalized_collection_observations(self) -> None:

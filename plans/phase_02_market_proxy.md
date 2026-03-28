@@ -7,6 +7,7 @@ Only begin proxy collection after the Egypt baseline accounting rows are current
 - `seed-01` and `seed-02` must have verified publication dates.
 - Pilot districts must be frozen for the review cycle.
 - A menu/place evidence packet template must exist for the first anomaly candidate.
+- `seed-11` / `seed-12` staged request specs must be actionable enough for external execution.
 
 ## Inputs
 - `plans/recent_accounting.csv`

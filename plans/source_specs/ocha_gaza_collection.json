@@ -6,7 +6,7 @@
   "adapter_type": "html_snapshot",
   "request_method": "GET",
   "request_params": {
-    "url": "https://www.ochaopt.org/content/gaza-humanitarian-response-update-30-march-12-april-2025",
+    "url": "https://www.ochaopt.org/publications/situation-reports",
     "fallback_stream": "https://www.ochaopt.org/",
     "capture_limit": 1,
     "preserve_query_string": true

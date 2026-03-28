@@ -77,7 +77,7 @@
     ],
     "primary_use": "Market-collapse and humanitarian deterioration timeline for Gaza baseline analysis.",
     "notes": "Treat Gaza as market-functionality collapse, not preference analysis.",
-    "url": "https://www.ochaopt.org/content/gaza-humanitarian-response-update-30-march-12-april-2025"
+    "url": "https://www.ochaopt.org/publications/situation-reports"
   },
   {
     "rank": 6,
@@ -364,8 +364,8 @@
       "csv"
     ],
     "primary_use": "Official Lebanon CPI context for distinguishing market stress, inflation, and FX-driven effects from local anomaly candidates.",
-    "notes": "Primary official macro-price control for Lebanon analysis.",
-    "url": "https://www.beta.cas.gov.lb/economic-statistics/cpi/"
+    "notes": "Primary official macro-price control for Lebanon analysis. Prefer the legacy CAS monthly CPI publication page and linked PDFs for freshness; treat the beta JSON dashboard as secondary context.",
+    "url": "http://cas.gov.lb/index.php/economic-statistics-en/cpi-en/"
   },
   {
     "rank": 24,

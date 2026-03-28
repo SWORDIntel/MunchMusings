@@ -82,7 +82,7 @@ The framework should start with sources that are stable, citable, and defensible
    Use for displacement-location tracking, movement snapshots, and cross-border context that can anchor Egypt and regional spillover analysis.
 
 5. **OCHA OPT Gaza humanitarian response updates**  
-   https://www.ochaopt.org/content/gaza-humanitarian-response-update-30-march-12-april-2025  
+   https://www.ochaopt.org/publications/situation-reports  
    Use for Gaza market-functionality collapse baselines. OCHA states that food consumption sharply deteriorated after the total blockade on supplies since **2 March 2025** and renewed hostilities since **18 March 2025**.
 
 6. **IPC Gaza and Lebanon analyses**  

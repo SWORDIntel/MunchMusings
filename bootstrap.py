@@ -37,6 +37,7 @@ RECENT_ACCOUNTING_FINDINGS_FIELDS = [
     'claim_date_utc',
     'owner',
     'evidence_link',
+    'mirror_evidence_link',
     'evidence_path',
     'status',
     'next_action',
@@ -310,9 +311,51 @@ def parse_accounting_date(value: str) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def derive_recency_status(refresh_cadence: str, last_published_date: str, status: str) -> str:
+def month_end_date(year: int, month: int) -> datetime:
+    if month == 12:
+        return datetime(year + 1, 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
+    return datetime(year, month + 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
+
+
+def latest_period_end_date(value: str) -> datetime | None:
+    normalized = value.strip()
+    if not normalized:
+        return None
+
+    candidates: list[datetime] = []
+    for part in re.split(r'\s*/\s*|\s+-\s+|\s+to\s+', normalized):
+        item = part.strip()
+        if not item:
+            continue
+        parsed = parse_accounting_date(item)
+        if parsed is not None:
+            candidates.append(parsed)
+            continue
+        month_match = re.fullmatch(r'(\d{4})-(\d{2})', item)
+        if month_match:
+            candidates.append(month_end_date(int(month_match.group(1)), int(month_match.group(2))))
+            continue
+        named_period = extract_named_month_period(item)
+        if named_period:
+            year, month = named_period.split('-')
+            candidates.append(month_end_date(int(year), int(month)))
+    return max(candidates) if candidates else None
+
+
+def derive_recency_status(
+    refresh_cadence: str,
+    last_published_date: str,
+    status: str,
+    latest_period_covered: str = '',
+) -> str:
     if status == 'blocked':
         return 'blocked'
+    if refresh_cadence == 'periodic':
+        period_end = latest_period_end_date(latest_period_covered)
+        if period_end is not None and period_end.date() >= utc_now().date():
+            return 'current'
+    if status == 'manual_review':
+        return 'manual_review'
 
     published_at = parse_accounting_date(last_published_date)
     window_days = recency_window_days(refresh_cadence)
@@ -383,6 +426,7 @@ def build_recent_accounting_rows(
         claim_date_utc = existing.get('claim_date_utc', '')
         owner = existing.get('owner', '')
         evidence_link = existing.get('evidence_link', '')
+        mirror_evidence_link = existing.get('mirror_evidence_link', '')
         evidence_path = existing.get('evidence_path', '')
         status = existing.get('status', 'pending_review') or 'pending_review'
         next_action = existing.get('next_action', 'Verify latest publication date, coverage window, and evidence link.')
@@ -402,9 +446,15 @@ def build_recent_accounting_rows(
                 'last_published_date': last_published_date,
                 'latest_period_covered': latest_period_covered,
                 'claim_date_utc': claim_date_utc,
-                'recency_status': derive_recency_status(record['refresh_cadence'], last_published_date, status),
+                'recency_status': derive_recency_status(
+                    record['refresh_cadence'],
+                    last_published_date,
+                    status,
+                    latest_period_covered,
+                ),
                 'owner': owner,
                 'evidence_link': evidence_link,
+                'mirror_evidence_link': mirror_evidence_link,
                 'evidence_path': evidence_path,
                 'status': status,
                 'next_check_due_utc': next_check_due_utc(record['refresh_cadence'], last_checked_utc),
@@ -426,6 +476,23 @@ def render_recent_accounting_summary(rows: list[dict[str, Any]]) -> str:
     unassigned = sum(1 for row in rows if not row['owner'])
     pending = sum(1 for row in rows if row['status'] == 'pending_review')
     generated_at = utc_now().isoformat().replace('+00:00', 'Z')
+    tier1_noncurrent = [
+        row for row in rows if row.get('priority_tier') == 'tier1' and row.get('recency_status') != 'current'
+    ]
+    tier1_noncurrent_labels = ', '.join(row['source_id'] for row in tier1_noncurrent[:5]) or 'none'
+    unknown_or_overdue = [row for row in rows if row.get('recency_status') in {'unknown', 'overdue'}]
+    if tier1_noncurrent:
+        action_one = f"Resolve the remaining tier-1 non-current rows first: {tier1_noncurrent_labels}."
+    else:
+        action_one = 'Keep the tier-1 ledger current and only open new accounting tasks when a row rolls out of window.'
+    if unknown_or_overdue:
+        action_two = 'Treat `unknown` and `overdue` rows as the priority backlog before due-now or manual-review cleanup.'
+    else:
+        action_two = 'The hard freshness backlog is clear; focus on the remaining `due_now` or `manual_review` rows and their next actions.'
+    if unassigned:
+        action_three = 'Backfill `owner` for the remaining unassigned rows so queue ownership matches the ledger.'
+    else:
+        action_three = 'Keep `owner` assignments aligned with the queue and preserve analyst-entered notes on refresh.'
 
     return """# Recent Accounting Summary
 
@@ -449,9 +516,9 @@ _Generated: {generated_at}._
 - Pending review rows: {pending}
 
 ## Immediate actions
-1. Fill `owner` and `last_checked_utc` for every tier-1 source.
-2. Capture `last_published_date`, `latest_period_covered`, and `evidence_link` for the Egypt baseline sources first.
-3. Treat `unknown` and `overdue` rows as the current work queue for accurate recent accounting.
+1. {action_one}
+2. {action_two}
+3. {action_three}
 """.format(
         generated_at=generated_at,
         total_sources=len(rows),
@@ -463,6 +530,9 @@ _Generated: {generated_at}._
         unknown=status_counts.get('unknown', 0),
         unassigned=unassigned,
         pending=pending,
+        action_one=action_one,
+        action_two=action_two,
+        action_three=action_three,
     )
 
 
@@ -497,6 +567,7 @@ def write_recent_accounting_pack(args: argparse.Namespace, records: list[dict[st
             'recency_status',
             'owner',
             'evidence_link',
+            'mirror_evidence_link',
             'evidence_path',
             'status',
             'next_check_due_utc',
@@ -586,6 +657,7 @@ def preserve_cross_host_url(existing: dict[str, str], field: str, default: str) 
         'reporting.unhcr.org': {'data.unhcr.org'},
         'cas.gov.lb': {'beta.cas.gov.lb', 'www.beta.cas.gov.lb'},
         'comtrade.un.org': {'comtradeplus.un.org'},
+        'centre.humdata.org': {'data.humdata.org'},
     }
     if default_host in legacy_host_map.get(existing_host, set()):
         return default
@@ -654,6 +726,7 @@ def build_source_verification_rows(
                 'latest_period_covered': row.get('latest_period_covered', ''),
                 'recency_status': row.get('recency_status', ''),
                 'evidence_link': row.get('evidence_link', '') if source_state_changed else preserve_url(existing, 'evidence_link', row.get('evidence_link', '')),
+                'mirror_evidence_link': row.get('mirror_evidence_link', ''),
                 'last_checked_utc': row.get('last_checked_utc', ''),
                 'next_action': row.get('next_action', '') if source_state_changed else preserve_text(existing, 'next_action', row.get('next_action', '')),
                 'notes': preserve_text(existing, 'notes', row.get('notes', '')),
@@ -691,15 +764,74 @@ def render_source_verification_summary(rows: list[dict[str, Any]]) -> str:
     return '\n'.join(lines)
 
 
-def build_verification_queue_rows(existing_rows: list[dict[str, str]], sprint_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def accounting_queue_status(existing: dict[str, str], recency_status: str) -> str:
+    preserved_status = existing.get('status', '').strip()
+    if preserved_status in {'in_progress', 'blocked'}:
+        return preserved_status
+    if recency_status == 'blocked':
+        return 'blocked'
+    return 'pending'
+
+
+def accounting_queue_priority(priority_tier: str, recency_status: str) -> str:
+    if priority_tier == 'tier1' and recency_status in {'unknown', 'due_now', 'overdue', 'blocked'}:
+        return 'high'
+    if priority_tier == 'tier1':
+        return 'medium'
+    return 'low'
+
+
+def accounting_queue_acceptance_criteria(row: dict[str, str]) -> str:
+    source_name = row.get('source_name', 'Source row')
+    return (
+        f"{source_name} row captures the latest visible publication date, coverage period, evidence link, "
+        "and next action, or records an explicit blocker/manual-review note"
+    )
+
+
+def build_accounting_queue_rows(
+    accounting_rows: list[dict[str, str]],
+    existing_lookup: dict[str, dict[str, str]],
+) -> list[dict[str, Any]]:
+    rows = []
+    for row in accounting_rows:
+        recency_status = row.get('recency_status', '')
+        if row.get('priority_tier') != 'tier1' or recency_status not in {'unknown', 'due_now', 'overdue', 'manual_review', 'blocked'}:
+            continue
+        rank = row.get('rank', '').zfill(3)
+        task_id = f"ACC-RA-{rank}" if rank else f"ACC-RA-{row.get('source_id', '')}"
+        existing = existing_lookup.get(task_id, {})
+        target_date = (row.get('next_check_due_utc', '') or '').split('T', 1)[0] or utc_now().date().isoformat()
+        rows.append(
+            {
+                'task_id': task_id,
+                'status': accounting_queue_status(existing, recency_status),
+                'priority': accounting_queue_priority(row.get('priority_tier', ''), recency_status),
+                'agent': row.get('owner', '') or verification_owner(row.get('source_family', '')),
+                'region': row.get('region_or_country', ''),
+                'source_id': row.get('source_id', ''),
+                'artifact': 'plans/recent_accounting.csv',
+                'target_date': existing.get('target_date') or target_date,
+                'depends_on': '',
+                'acceptance_criteria': accounting_queue_acceptance_criteria(row),
+            }
+        )
+    return rows
+
+
+def build_verification_queue_rows(
+    existing_rows: list[dict[str, str]],
+    accounting_rows: list[dict[str, str]],
+    sprint_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     existing_lookup = {row.get('task_id', ''): row for row in existing_rows if row.get('task_id')}
-    sprint_source_ids = {row.get('source_id', '') for row in sprint_rows if row.get('source_id')}
+    accounting_source_ids = {row.get('source_id', '') for row in accounting_rows if row.get('source_id')}
     preserved_rows = []
     for row in existing_rows:
         task_id = row.get('task_id', '')
         if task_id.startswith('VER-'):
             continue
-        if task_id.startswith('ACC-') and row.get('artifact') == 'plans/recent_accounting.csv' and row.get('source_id', '') in sprint_source_ids:
+        if task_id.startswith('ACC-RA-') and row.get('artifact') == 'plans/recent_accounting.csv' and row.get('source_id', '') in accounting_source_ids:
             continue
         preserved_rows.append(row)
     lane_map = {
@@ -711,19 +843,24 @@ def build_verification_queue_rows(existing_rows: list[dict[str, str]], sprint_ro
     def lane_status(lane: str) -> str:
         rows = [row for row in sprint_rows if row.get('lane') == lane]
         if not rows:
-            return 'pending'
+            return ''
         if all(row.get('status') == 'verified' for row in rows):
             return 'completed'
         if any(row.get('status') in {'verified', 'research_complete'} for row in rows):
             return 'in_progress'
         return 'pending'
 
+    accounting_queue_rows = build_accounting_queue_rows(accounting_rows, existing_lookup)
     ver_rows = []
     tracker_row = existing_lookup.get('VER-001', {})
     ver_rows.append(
         {
             'task_id': 'VER-001',
-            'status': tracker_row.get('status') or 'in_progress',
+            'status': (
+                'completed'
+                if sprint_rows and all(row.get('status') == 'verified' for row in sprint_rows)
+                else tracker_row.get('status') or 'in_progress'
+            ),
             'priority': 'high',
             'agent': 'source_monitor',
             'region': 'Global',
@@ -738,10 +875,15 @@ def build_verification_queue_rows(existing_rows: list[dict[str, str]], sprint_ro
     for task_id, (lane, criteria) in lane_map.items():
         existing = existing_lookup.get(task_id, {})
         lane_rows = [row for row in sprint_rows if row.get('lane') == lane]
+        status = lane_status(lane)
+        if not lane_rows and not existing:
+            continue
+        if not lane_rows and existing and existing.get('status') not in {'in_progress', 'blocked'}:
+            continue
         ver_rows.append(
             {
                 'task_id': task_id,
-                'status': lane_status(lane),
+                'status': status or existing.get('status') or 'pending',
                 'priority': 'high',
                 'agent': existing.get('agent') or f'{lane}_research',
                 'region': '|'.join(sorted({row.get('region_or_country', '') for row in lane_rows if row.get('region_or_country')})) or 'Global',
@@ -752,7 +894,7 @@ def build_verification_queue_rows(existing_rows: list[dict[str, str]], sprint_ro
                 'acceptance_criteria': criteria,
             }
         )
-    return preserved_rows + ver_rows
+    return preserved_rows + accounting_queue_rows + ver_rows
 
 
 def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -770,7 +912,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
     sprint_rows = build_source_verification_rows(accounting_rows, existing_sprint_rows)
     connector_rows = build_connector_readiness_rows(records, existing_connector_rows)
     existing_work_queue_rows = load_csv_rows(work_queue_path)
-    work_queue_rows = build_verification_queue_rows(existing_work_queue_rows, sprint_rows)
+    work_queue_rows = build_verification_queue_rows(existing_work_queue_rows, accounting_rows, sprint_rows)
 
     write_rows_csv(
         [
@@ -789,6 +931,7 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
             'latest_period_covered',
             'recency_status',
             'evidence_link',
+            'mirror_evidence_link',
             'last_checked_utc',
             'next_action',
             'notes',
@@ -865,12 +1008,16 @@ def collection_adapter_type(record: dict[str, Any]) -> str:
     source_family = record['source_family']
 
     # ID-based overrides for high-priority adapters
+    if source_id == 'seed-02':
+        return 'iom_dtm_sudan'
     if source_id == 'seed-33':
         return 'ashdod_port_financials'
     if source_id == 'seed-06':
         return 'ipc_gaza_snapshot'
     if source_id == 'seed-07':
         return 'ipc_lebanon_analysis'
+    if source_id == 'seed-22':
+        return 'saudi_gastat_cpi'
 
     browser_staged_sources = {
         'IOM DTM Sudan',
@@ -878,7 +1025,7 @@ def collection_adapter_type(record: dict[str, Any]) -> str:
         'Ashdod Port Financial and Operating Updates',
     }
 
-    if source_name in {'UNHCR Lebanon reporting hub', 'UNHCR Egypt Sudan Emergency Update'}:
+    if source_name in {'UNHCR Lebanon reporting hub', 'UNHCR Egypt Sudan Emergency Update', 'UNHCR Egypt data portal'}:
         return 'unhcr_document_index'
     if source_name == 'IPC Lebanon analysis':
         return 'ipc_lebanon_analysis'
@@ -905,7 +1052,7 @@ def collection_adapter_type(record: dict[str, Any]) -> str:
     if source_name == 'HDX Humanitarian API':
         return 'hdx_hapi_changelog'
     if source_name == 'HDX Signals':
-        return 'hdx_signals_story'
+        return 'hdx_dataset_metadata'
     if source_name == 'IPC Gaza snapshot':
         return 'ipc_gaza_snapshot'
     if source_name == 'Ashdod Port Financial and Operating Updates':
@@ -2710,6 +2857,7 @@ def raw_extension(adapter_type: str) -> str:
         'israel_cbs_price_indices',
         'israel_iaa_monthly_reports',
         'unhcr_document_index',
+        'iom_dtm_sudan',
         'ipc_lebanon_analysis',
         'acaps_country_page',
         'unctad_maritime_insights',
@@ -2772,6 +2920,8 @@ def hdx_dataset_api_url(url: str) -> str:
     if url.startswith('file://') or url.endswith('.json'):
         return url
     parsed = urlparse(url)
+    if parsed.netloc == 'data.humdata.org' and parsed.path.rstrip('/') == '/signals':
+        return f'{parsed.scheme}://{parsed.netloc}/api/3/action/package_show?id=hdx-signals'
     marker = '/dataset/'
     if marker not in parsed.path:
         return url
@@ -2785,7 +2935,18 @@ def hdx_hapi_changelog_url(url: str) -> str:
     return 'https://hdx-hapi.readthedocs.io/en/latest/changelog/'
 
 
+def hdx_hapi_faq_url(url: str) -> str:
+    if url.startswith('file://') or url.endswith('.html'):
+        return url
+    return 'https://centre.humdata.org/ufaqs/how-up-to-date-is-the-data-in-hdx-hapi/'
+
+
 def unhcr_document_index_url(url: str) -> str:
+    if url.startswith('https://data.unhcr.org/en/country/egy'):
+        return (
+            'https://data.unhcr.org/en/search?direction=desc&geo_id=1&page=1&sector=0&'
+            'sector_json=%7B%220%22%3A+%220%22%7D&sort=publishDate&sv_id=0&type%5B0%5D=document'
+        )
     return url
 
 
@@ -2801,6 +2962,41 @@ def wfp_lebanon_programme_factsheet_pdf_url(url: str) -> str:
     if url.startswith('file://') or url.endswith('.pdf'):
         return url
     return 'https://docs.wfp.org/api/documents/WFP-0000169349/download/'
+
+
+def extract_wfp_lebanon_programme_page_metadata(html_body: str, page_url: str) -> dict[str, str]:
+    title = extract_html_title(html_body)
+    publication_date = ''
+    for pattern in (
+        r'content_publication_date":"(20\d{2}-\d{2}-\d{2})"',
+        r'<time[^>]+datetime="([^"]+)"',
+    ):
+        match = re.search(pattern, html_body, flags=re.IGNORECASE)
+        if not match:
+            continue
+        parsed = parse_accounting_date(match.group(1))
+        if parsed is None:
+            continue
+        publication_date = parsed.date().isoformat()
+        break
+
+    download_url = ''
+    for pattern in (
+        r'<a href="(https://docs\.wfp\.org/api/documents/[^"\s]+/download/)" class="button-new button-new--primary" aria-label="Open in English"',
+        r'href="(https://docs\.wfp\.org/api/documents/[^"\s]+/download/)"',
+    ):
+        match = re.search(pattern, html_body, flags=re.IGNORECASE)
+        if match:
+            download_url = html_lib.unescape(match.group(1))
+            break
+
+    return {
+        'page_url': page_url,
+        'document_title': title,
+        'last_published_date': publication_date,
+        'latest_period_covered': extract_named_month_period(title),
+        'document_download_url': download_url or wfp_lebanon_programme_factsheet_pdf_url(page_url),
+    }
 
 
 def comtrade_data_availability_api_url(url: str) -> str:
@@ -2868,7 +3064,7 @@ def israel_iaa_monthly_reports_url(url: str) -> str:
 def lebanon_cas_cpi_page_url(url: str) -> str:
     if url.startswith('file://') or url.endswith('.html'):
         return url
-    return 'https://www.beta.cas.gov.lb/economic-statistics/cpi/'
+    return 'http://cas.gov.lb/index.php/economic-statistics-en/cpi-en/'
 
 
 def html_to_visible_text(value: str) -> str:
@@ -3032,7 +3228,7 @@ def normalize_dotted_period_range(value: str) -> str:
 
 
 def extract_unhcr_issue_period(text: str) -> str:
-    range_match = re.search(r'\b(\d{1,2})-(\d{1,2})\s+([A-Z][a-z]+)\s+(20\d{2})\b', text)
+    range_match = re.search(r'\b(\d{1,2})\s*[-\u2013\u2014]\s*(\d{1,2})\s+([A-Z][a-z]+)\s+(20\d{2})\b', text)
     if range_match:
         start_date = parse_written_date(f"{range_match.group(1)} {range_match.group(3)} {range_match.group(4)}")
         end_date = parse_written_date(f"{range_match.group(2)} {range_match.group(3)} {range_match.group(4)}")
@@ -3083,9 +3279,17 @@ def extract_unhcr_document_candidates(index_html: str) -> list[dict[str, str]]:
 def unhcr_document_title_match(source_name: str, title: str) -> bool:
     lowered = title.lower()
     if source_name == 'UNHCR Lebanon reporting hub':
-        return 'flash update' in lowered and 'lebanon' in lowered
+        if 'flash update' in lowered and 'lebanon' in lowered:
+            return True
+        if lowered.startswith('middle east situation') and ('as of' in lowered or 'lebanon' in lowered):
+            return True
+        return False
     if source_name == 'UNHCR Egypt Sudan Emergency Update':
-        return lowered.startswith('egypt:') and ('emergency response update' in lowered or 'sudan' in lowered)
+        return lowered.startswith('egypt:') and (
+            'emergency response update' in lowered or 'new arrivals from sudan' in lowered
+        )
+    if source_name == 'UNHCR Egypt data portal':
+        return lowered.startswith('egypt:') and 'new arrivals from sudan' in lowered
     return False
 
 
@@ -3158,14 +3362,21 @@ def extract_unctad_maritime_insights_metadata(page_html: str, page_url: str) -> 
         body = match.group('body')
         title_match = re.search(r'<h3[^>]*class="[^"]*dataviz-heading__title[^"]*"[^>]*>\s*(?P<title>.*?)\s*</h3>', body, flags=re.IGNORECASE | re.DOTALL)
         date_match = re.search(r'updatedate__content[^>]*>\s*(?P<date>[^<]+)\s*<', body, flags=re.IGNORECASE | re.DOTALL)
-        metadata_match = re.search(r'https://unctadstat\.unctad\.org/datacentre/(?:reportInfo|dataviewer)/[^"\']+', body, flags=re.IGNORECASE)
+        metadata_match = re.search(
+            r'href="(?P<link>(?:https://unctadstat\.unctad\.org)?/datacentre/(?:reportInfo|dataviewer)/[^"\']+)"',
+            body,
+            flags=re.IGNORECASE,
+        )
+        title_text = html_to_visible_text(title_match.group('title')) if title_match else ''
+        article_text = html_to_visible_text(body)
         visible_date = parse_written_date((date_match.group('date') if date_match else '').replace('.', ''))
         if not visible_date:
             continue
         dated_items.append({
             'latest_visible_date': visible_date,
-            'title': html_to_visible_text(title_match.group('title')) if title_match else '',
-            'metadata_link': html_lib.unescape(metadata_match.group(0)) if metadata_match else page_url,
+            'title': title_text,
+            'metadata_link': urljoin(page_url, html_lib.unescape(metadata_match.group('link'))) if metadata_match else page_url,
+            'latest_period_covered': derive_quarter_period_from_text(f'{title_text} {article_text}'),
         })
 
     if not dated_items:
@@ -3175,6 +3386,7 @@ def extract_unctad_maritime_insights_metadata(page_html: str, page_url: str) -> 
             'latest_visible_date': max(fallback_dates) if fallback_dates else '',
             'latest_title': '',
             'metadata_link': page_url,
+            'latest_period_covered': '',
         }
 
     dated_items.sort(key=lambda item: item['latest_visible_date'], reverse=True)
@@ -3182,6 +3394,7 @@ def extract_unctad_maritime_insights_metadata(page_html: str, page_url: str) -> 
         'latest_visible_date': dated_items[0]['latest_visible_date'],
         'latest_title': dated_items[0]['title'],
         'metadata_link': dated_items[0]['metadata_link'],
+        'latest_period_covered': dated_items[0]['latest_period_covered'],
     }
 
 
@@ -3219,14 +3432,36 @@ def extract_sca_navigation_news_candidates(index_html: str, page_url: str) -> li
 
 
 def extract_sca_navigation_news_detail(detail_html: str) -> dict[str, str]:
+    visible_text = html_to_visible_text(detail_html)
     title_match = re.search(r'<title>\s*SCA\s*-\s*(?P<title>.*?)\s*</title>', detail_html, flags=re.IGNORECASE | re.DOTALL)
     category_match = re.search(r'>\s*Navigation News\s*<', detail_html, flags=re.IGNORECASE)
-    date_matches = [parse_written_date(value) for value in re.findall(r'\b\d{1,2} [A-Z][a-z]+ 20\d{2}\b', html_to_visible_text(detail_html))]
+    date_matches = [parse_written_date(value) for value in re.findall(r'\b\d{1,2} [A-Z][a-z]+ 20\d{2}\b', visible_text)]
     date_matches = [value for value in date_matches if value]
+    daily_match = re.search(
+        r'transit of (\d+) vessels(?: today| in both directions)? at a total gross tonnage of ([0-9.]+) million tons',
+        visible_text,
+        flags=re.IGNORECASE,
+    )
+    convoy_match = re.search(
+        r'(\d+) vessels in the nourthern convoy.*?(\d+) vessels in the southern convoy',
+        visible_text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    rolling_match = re.search(
+        r'during the past three days, (\d+) vessels transited through the Canal, with a total net tonnage of ([0-9.]+) million tons',
+        visible_text,
+        flags=re.IGNORECASE,
+    )
     return {
         'title': html_to_visible_text(title_match.group('title')) if title_match else '',
         'category': 'Navigation News' if category_match else '',
         'detail_date': max(date_matches) if date_matches else '',
+        'daily_vessel_count': daily_match.group(1) if daily_match else '',
+        'daily_gross_tonnage_mtons': daily_match.group(2) if daily_match else '',
+        'northbound_vessel_count': convoy_match.group(1) if convoy_match else '',
+        'southbound_vessel_count': convoy_match.group(2) if convoy_match else '',
+        'rolling_three_day_vessel_count': rolling_match.group(1) if rolling_match else '',
+        'rolling_three_day_gross_tonnage_mtons': rolling_match.group(2) if rolling_match else '',
     }
 
 
@@ -3240,6 +3475,33 @@ def latest_month_period_from_entries(entries: dict[str, Any]) -> str:
             if period and period_sort_key(period) > period_sort_key(latest):
                 latest = period
     return latest
+
+
+def extract_lebanon_cas_cpi_release_candidates(page_html: str, page_url: str) -> list[dict[str, str]]:
+    candidates = []
+    seen_urls = set()
+    for href in re.findall(r'href=["\']([^"\']+\.pdf)["\']', page_html, flags=re.IGNORECASE):
+        pdf_url = urljoin(page_url, html_lib.unescape(href))
+        if pdf_url in seen_urls:
+            continue
+        seen_urls.add(pdf_url)
+        match = re.search(r'/CPI/(?P<year>20\d{2})/(?P<month>\d{1,2})-[^/]+\.pdf$', pdf_url, flags=re.IGNORECASE)
+        if not match:
+            continue
+        candidates.append(
+            {
+                'pdf_url': pdf_url,
+                'latest_period_covered': f"{match.group('year')}-{int(match.group('month')):02d}",
+            }
+        )
+    candidates.sort(key=lambda item: period_sort_key(item['latest_period_covered']), reverse=True)
+    return candidates
+
+
+def select_lebanon_cas_cpi_release_candidate(candidates: list[dict[str, str]]) -> dict[str, str]:
+    if not candidates:
+        return {}
+    return candidates[0]
 
 
 def lebanon_cas_cpi_json_url(page_html: str) -> str:
@@ -3273,6 +3535,23 @@ def period_sort_key(value: str) -> tuple[int, int]:
         return (0, 0)
     year, month = value.split('-', 1)
     return int(year), int(month)
+
+
+def derive_quarter_period_from_text(text: str) -> str:
+    normalized = html_lib.unescape(text)
+    match = re.search(r'\b(first|second|third|fourth)\s+quarter\s+of\s+(20\d{2})\b', normalized, flags=re.IGNORECASE)
+    if not match:
+        return ''
+    quarter = match.group(1).lower()
+    year = match.group(2)
+    quarter_to_period = {
+        'first': '03',
+        'second': '06',
+        'third': '09',
+        'fourth': '12',
+    }
+    month = quarter_to_period.get(quarter, '')
+    return f'{year}-{month}' if month else ''
 
 
 def iso_date_from_http_datetime(value: str) -> str:
@@ -3335,6 +3614,57 @@ def extract_cbs_price_indices_rows(html_body: str) -> list[dict[str, Any]]:
     if isinstance(data, dict):
         return [row for row in data.values() if isinstance(row, dict)]
     return []
+
+
+def extract_gastat_last_modified_date(html_body: str) -> str:
+    match = re.search(r'Last Modified:\s*(\d{2}/\d{2}/\d{4})', html_body, flags=re.IGNORECASE)
+    if not match:
+        return ''
+    day, month, year = match.group(1).split('/')
+    return f'{year}-{month}-{day}'
+
+
+def saudi_gastat_cpi_listing_url(url: str) -> str:
+    if not url or url.startswith('file://') or url.endswith('.html'):
+        return url
+    if '/statistics-tabs/' in url:
+        return url
+    return 'https://www.stats.gov.sa/en/statistics-tabs/-/categories/121421?category=121421&delta=20&start=1&tab=436312'
+
+
+def extract_gastat_cpi_listing_metadata(page_html: str, page_url: str) -> dict[str, str]:
+    candidates = []
+    pattern = re.compile(
+        r'<div class="box-body">(?P<body>.*?)<!-- View Details Button -->',
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    for match in pattern.finditer(page_html):
+        body = match.group('body')
+        title_match = re.search(r'<span class="row-header">\s*(?P<title>.*?)\s*</span>', body, flags=re.IGNORECASE | re.DOTALL)
+        title = html_to_visible_text(title_match.group('title')) if title_match else ''
+        if 'consumer price index' not in title.lower():
+            continue
+        latest_period_covered = extract_named_month_period(title)
+        if not latest_period_covered:
+            continue
+        links = [urljoin(page_url, html_lib.unescape(link)) for link in re.findall(r'href="([^"]+)"', body, flags=re.IGNORECASE)]
+        pdf_link = next((link for link in links if '.pdf' in link.lower()), '')
+        xlsx_link = next((link for link in links if '.xlsx' in link.lower()), '')
+        evidence_link = pdf_link or xlsx_link or page_url
+        candidates.append(
+            {
+                'document_title': title,
+                'latest_period_covered': latest_period_covered,
+                'evidence_link': evidence_link,
+            }
+        )
+    if not candidates:
+        return {}
+    candidates.sort(
+        key=lambda item: (period_sort_key(item.get('latest_period_covered', '')), 1 if item.get('evidence_link', '').lower().endswith('.pdf') else 0),
+        reverse=True,
+    )
+    return candidates[0]
 
 
 def select_cbs_cpi_release(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -3687,21 +4017,50 @@ def build_lebanon_cas_cpi_payload(
     json_url = lebanon_cas_cpi_json_url(page_html)
     json_raw_path = raw_path.with_name(f'{raw_path.stem}-data.json')
     data_payload, json_fetch = fetch_json_source(json_url, json_raw_path)
-    latest_period_covered = latest_month_period_from_entries(data_payload.get('entries', {}))
-    latest_visible_date = requests_head_last_modified(json_url)
+    beta_period_covered = latest_month_period_from_entries(data_payload.get('entries', {}))
+    beta_last_modified = requests_head_last_modified(json_url)
+    latest_period_covered = beta_period_covered
+    latest_visible_date = beta_last_modified
+    evidence_link = json_url
+    tertiary_raw_path = ''
+    pdf_fetch: dict[str, Any] | None = None
+
+    official_candidate = select_lebanon_cas_cpi_release_candidate(
+        extract_lebanon_cas_cpi_release_candidates(page_html, page_url)
+    )
+    official_period = official_candidate.get('latest_period_covered', '')
+    if official_period and period_sort_key(official_period) > period_sort_key(beta_period_covered):
+        official_pdf_url = official_candidate.get('pdf_url', '')
+        pdf_raw_path = raw_path.with_name(f'{raw_path.stem}-official.pdf')
+        pdf_fetch = fetch_direct_source(official_pdf_url, pdf_raw_path)
+        tertiary_raw_path = str(pdf_raw_path)
+        latest_period_covered = official_period
+        latest_visible_date = requests_head_last_modified(official_pdf_url) or beta_last_modified
+        evidence_link = official_pdf_url
+
+    checksum_parts = [raw_path.read_bytes(), json_raw_path.read_bytes()]
+    bytes_written = page_fetch['bytes_written'] + json_fetch['bytes_written']
+    if pdf_fetch:
+        checksum_parts.append(Path(tertiary_raw_path).read_bytes())
+        bytes_written += pdf_fetch['bytes_written']
 
     return {
         'capture_status': 'completed',
-        'status_code': json_fetch['status_code'],
-        'content_type': json_fetch['content_type'],
-        'bytes_written': page_fetch['bytes_written'] + json_fetch['bytes_written'],
-        'checksum_sha256': hashlib.sha256(raw_path.read_bytes() + json_raw_path.read_bytes()).hexdigest(),
+        'status_code': (pdf_fetch or json_fetch)['status_code'],
+        'content_type': (pdf_fetch or json_fetch)['content_type'],
+        'bytes_written': bytes_written,
+        'checksum_sha256': hashlib.sha256(b''.join(checksum_parts)).hexdigest(),
         'raw_path': str(raw_path),
         'secondary_raw_path': str(json_raw_path),
+        'tertiary_raw_path': tertiary_raw_path,
         'metadata_source_url': json_url,
         'latest_visible_date': latest_visible_date,
         'latest_period_covered': latest_period_covered,
-        'normalized_summary': f"{manifest_row.get('source_name', '')} CPI dashboard page and JSON feed captured from beta.cas.gov.lb.",
+        'normalized_summary': (
+            f"{manifest_row.get('source_name', '')} CPI dashboard captured from beta.cas.gov.lb."
+            if not pdf_fetch
+            else f"{manifest_row.get('source_name', '')} CPI dashboard captured with a newer official monthly PDF from cas.gov.lb."
+        ),
         'verification_updates': {
             'source_id': manifest_row.get('source_id', ''),
             'last_checked_utc': captured_utc,
@@ -3709,11 +4068,83 @@ def build_lebanon_cas_cpi_payload(
             'latest_period_covered': latest_period_covered,
             'claim_date_utc': '',
             'owner': '',
-            'evidence_link': json_url,
+            'evidence_link': evidence_link,
             'evidence_path': '',
             'status': 'in_review',
-            'next_action': 'Track the CAS CPI dashboard JSON feed and confirm when a month newer than November 2025 appears.',
-            'notes': f"CAS CPI dashboard captured on {captured_utc}. Feed last-modified date: {latest_visible_date or 'not found'}; latest visible period in JSON: {latest_period_covered or 'not found'}.",
+            'next_action': (
+                'Track the CAS CPI dashboard JSON feed and the official CAS monthly CPI publication page; promote the official PDF when it is newer than the beta JSON feed.'
+            ),
+            'notes': (
+                f"CAS CPI dashboard captured on {captured_utc}. Beta feed last-modified date: {beta_last_modified or 'not found'}; "
+                f"latest visible period in beta JSON: {beta_period_covered or 'not found'}; "
+                + (
+                    f"newer official CPI PDF selected: {evidence_link} with covered period {latest_period_covered or 'not found'} and last-modified date {latest_visible_date or 'not found'}."
+                    if pdf_fetch
+                    else f"evidence remains the beta JSON feed at {json_url}."
+                )
+            ),
+        },
+    }
+
+
+def build_saudi_gastat_cpi_payload(
+    manifest_row: dict[str, str],
+    adapter_row: dict[str, str],
+    raw_path: Path,
+    captured_utc: str,
+) -> dict[str, Any]:
+    source_url = adapter_row.get('url', '')
+    listing_url = saudi_gastat_cpi_listing_url(source_url)
+    fetch_meta = fetch_direct_source(listing_url, raw_path)
+    html_body = raw_path.read_text(errors='ignore')
+    metadata_source_url = listing_url or source_url
+    listing_metadata = extract_gastat_cpi_listing_metadata(html_body, metadata_source_url)
+    evidence_link = listing_metadata.get('evidence_link', '')
+    last_published_date = requests_head_last_modified(evidence_link) if evidence_link else ''
+    latest_period_covered = listing_metadata.get('latest_period_covered', '')
+    document_title = listing_metadata.get('document_title', '')
+
+    if not latest_period_covered:
+        if listing_url != source_url and source_url:
+            fetch_meta = fetch_direct_source(source_url, raw_path)
+            html_body = raw_path.read_text(errors='ignore')
+            metadata_source_url = source_url
+        last_published_date = extract_gastat_last_modified_date(html_body)
+        if last_published_date:
+            published_dt = parse_accounting_date(last_published_date)
+            if published_dt is not None:
+                latest_period_covered = (published_dt.replace(day=1) - timedelta(days=1)).strftime('%Y-%m')
+        evidence_link = source_url
+        document_title = ''
+
+    return {
+        'capture_status': 'completed',
+        'status_code': fetch_meta['status_code'],
+        'content_type': fetch_meta['content_type'],
+        'bytes_written': fetch_meta['bytes_written'],
+        'checksum_sha256': fetch_meta['checksum_sha256'],
+        'raw_path': str(raw_path),
+        'metadata_source_url': metadata_source_url,
+        'document_title': document_title,
+        'latest_visible_date': last_published_date,
+        'latest_period_covered': latest_period_covered,
+        'normalized_summary': 'Saudi GASTAT CPI listing captured and parsed for the latest monthly publication, with footer fallback if listing metadata is unavailable.',
+        'verification_updates': {
+            'source_id': manifest_row.get('source_id', ''),
+            'last_checked_utc': captured_utc,
+            'last_published_date': last_published_date,
+            'latest_period_covered': latest_period_covered,
+            'claim_date_utc': '',
+            'owner': '',
+            'evidence_link': evidence_link or source_url,
+            'evidence_path': '',
+            'status': 'in_review',
+            'next_action': 'Check for the next monthly CPI release and capture the exact release page if January 2026 or later is available',
+            'notes': (
+                f"GASTAT CPI source captured on {captured_utc}. Evidence link: {(evidence_link or source_url) or 'not found'}; "
+                f"publication date: {last_published_date or 'not found'}; covered period: {latest_period_covered or 'not found'}"
+                f"{f'; title: {document_title}' if document_title else '.'}"
+            ),
         },
     }
 
@@ -3745,6 +4176,20 @@ def build_hdx_dataset_metadata_payload(
         ]
     )
     latest_visible_date = metadata_date or latest_resource_date
+    data_update_frequency = str(package.get('data_update_frequency', '') or '').strip()
+    due_date = str(package.get('due_date', '') or '').strip()
+    update_status = str(package.get('update_status', '') or '').strip()
+    updated_by_script = str(package.get('updated_by_script', '') or '').strip()
+    notes = (
+        f"HDX dataset metadata sync captured on {captured_utc}. Latest visible metadata date: "
+        f"{latest_visible_date or 'not exposed'}; latest resource date: {latest_resource_date or 'not exposed'}."
+    )
+    if data_update_frequency:
+        notes += f" Declared update frequency: every {data_update_frequency} day(s)."
+    if due_date:
+        notes += f" Due date: {due_date}."
+    if update_status:
+        notes += f" Update status: {update_status}."
     return {
         'capture_status': 'completed',
         'status_code': fetch_meta['status_code'],
@@ -3757,6 +4202,10 @@ def build_hdx_dataset_metadata_payload(
         'dataset_name': package.get('name', ''),
         'metadata_modified': package.get('metadata_modified', ''),
         'metadata_created': package.get('metadata_created', ''),
+        'data_update_frequency': data_update_frequency,
+        'due_date': due_date,
+        'update_status': update_status,
+        'updated_by_script': updated_by_script,
         'resource_count': len(package.get('resources', [])),
         'latest_resource_modified_date': latest_resource_date,
         'normalized_summary': f"{manifest_row.get('source_name', '')} metadata refresh captured from HDX package metadata.",
@@ -3771,7 +4220,7 @@ def build_hdx_dataset_metadata_payload(
             'evidence_path': '',
             'status': 'in_review',
             'next_action': 'Review dataset resources for an explicit coverage-period marker after metadata sync.',
-            'notes': f"HDX dataset metadata sync captured on {captured_utc}. Latest visible metadata date: {latest_visible_date or 'not exposed'}; latest resource date: {latest_resource_date or 'not exposed'}.",
+            'notes': notes,
         },
     }
 
@@ -3782,10 +4231,42 @@ def build_hdx_hapi_changelog_payload(
     raw_path: Path,
     captured_utc: str,
 ) -> dict[str, Any]:
+    faq_url = hdx_hapi_faq_url(adapter_row.get('url', ''))
     changelog_url = hdx_hapi_changelog_url(adapter_row.get('url', ''))
-    fetch_meta = fetch_direct_source(changelog_url, raw_path)
-    html_body = raw_path.read_text(errors='replace')
-    latest_visible_date = latest_iso_date(re.findall(r'\b20\d{2}-\d{2}-\d{2}\b', html_body))
+    fetch_meta = fetch_direct_source(faq_url, raw_path)
+    faq_html = raw_path.read_text(errors='replace')
+    faq_text = html_to_visible_text(faq_html)
+    faq_last_modified = requests_head_last_modified(faq_url)
+    daily_update_statement = 'updated daily from the source data' in faq_text.lower()
+    secondary_raw_path = ''
+    changelog_latest_visible_date = ''
+    if changelog_url and changelog_url != faq_url:
+        changelog_raw_path = raw_path.with_name(f'{raw_path.stem}-changelog.html')
+        changelog_fetch = fetch_direct_source(changelog_url, changelog_raw_path)
+        changelog_html = changelog_raw_path.read_text(errors='replace')
+        changelog_latest_visible_date = latest_iso_date(re.findall(r'\b20\d{2}-\d{2}-\d{2}\b', changelog_html))
+        fetch_meta = {
+            'status_code': fetch_meta['status_code'],
+            'content_type': fetch_meta['content_type'],
+            'bytes_written': fetch_meta['bytes_written'] + changelog_fetch['bytes_written'],
+            'checksum_sha256': hashlib.sha256(raw_path.read_bytes() + changelog_raw_path.read_bytes()).hexdigest(),
+        }
+        secondary_raw_path = str(changelog_raw_path)
+    latest_visible_date = faq_last_modified or latest_iso_date(re.findall(r'\b20\d{2}-\d{2}-\d{2}\b', faq_html))
+    status = 'in_review' if daily_update_statement and latest_visible_date else 'manual_review'
+    next_action = (
+        'Use the public HAPI FAQ as the product-level freshness marker and confirm dataset-specific cadence from the underlying source datasets.'
+        if status == 'in_review'
+        else 'Capture a source-data coverage marker in addition to the product FAQ because per-dataset cadence still varies.'
+    )
+    notes = (
+        f"Public HAPI FAQ captured on {captured_utc}. FAQ last-modified date: {latest_visible_date or 'not found'}; "
+        f"daily-update statement present: {'yes' if daily_update_statement else 'no'}"
+    )
+    if changelog_latest_visible_date:
+        notes += f"; changelog latest visible date: {changelog_latest_visible_date}."
+    else:
+        notes += '.'
     return {
         'capture_status': 'completed',
         'status_code': fetch_meta['status_code'],
@@ -3793,9 +4274,10 @@ def build_hdx_hapi_changelog_payload(
         'bytes_written': fetch_meta['bytes_written'],
         'checksum_sha256': fetch_meta['checksum_sha256'],
         'raw_path': str(raw_path),
-        'metadata_source_url': changelog_url,
+        'secondary_raw_path': secondary_raw_path,
+        'metadata_source_url': faq_url,
         'latest_visible_date': latest_visible_date,
-        'normalized_summary': f"{manifest_row.get('source_name', '')} changelog refresh captured from the public HAPI changelog.",
+        'normalized_summary': f"{manifest_row.get('source_name', '')} FAQ refresh captured from the public HAPI product page.",
         'verification_updates': {
             'source_id': manifest_row.get('source_id', ''),
             'last_checked_utc': captured_utc,
@@ -3803,11 +4285,11 @@ def build_hdx_hapi_changelog_payload(
             'latest_period_covered': '',
             'claim_date_utc': '',
             'owner': '',
-            'evidence_link': changelog_url,
+            'evidence_link': faq_url,
             'evidence_path': '',
-            'status': 'in_review',
-            'next_action': 'Capture a source-data coverage marker in addition to the changelog date because the changelog tracks product changes rather than reporting periods.',
-            'notes': f"Public HAPI changelog sync captured on {captured_utc}. Latest visible changelog date: {latest_visible_date or 'not found'}.",
+            'status': status,
+            'next_action': next_action,
+            'notes': notes,
         },
     }
 
@@ -3848,11 +4330,15 @@ def build_hdx_signals_story_payload(
             'latest_period_covered': latest_period_covered,
             'claim_date_utc': '',
             'owner': '',
-            'evidence_link': author_url,
+            'evidence_link': story_url,
             'evidence_path': '',
-            'status': 'in_review',
+            'status': 'manual_review',
             'next_action': 'Use the Signals story page as the coverage source and keep watching for a machine-readable feed or API endpoint.',
-            'notes': f"Signals story parsed on {captured_utc}. Publication date from the author archive: {latest_visible_date or 'not found'}. Coverage marker from the story page: {latest_period_covered or 'not found'}.",
+            'notes': (
+                f"Signals story parsed on {captured_utc}. Story evidence: {story_url}. "
+                f"Publication date from the author archive: {latest_visible_date or 'not found'}. "
+                f"Coverage marker from the story page: {latest_period_covered or 'not found'}."
+            ),
         },
     }
 
@@ -3876,16 +4362,29 @@ def build_unhcr_document_index_payload(
     detail_fetch = fetch_direct_source(candidate.get('detail_page_url', ''), detail_raw_path)
     detail_text = html_to_visible_text(detail_raw_path.read_text(errors='replace'))
     latest_period_covered = extract_unhcr_issue_period(' '.join([candidate.get('title', ''), candidate.get('body', ''), detail_text]))
+    pdf_raw_path = raw_path.with_name(f'{raw_path.stem}-document.pdf')
+    pdf_fetch: dict[str, Any] | None = None
+    if not latest_period_covered and candidate.get('download_url', ''):
+        pdf_fetch = fetch_direct_source(candidate.get('download_url', ''), pdf_raw_path)
+        latest_period_covered = extract_unhcr_issue_period(pdftotext_content(pdf_raw_path))
     upload_date = extract_unhcr_detail_upload_date(detail_text) or candidate.get('upload_date', '')
+    checksum_parts = [raw_path.read_bytes(), detail_raw_path.read_bytes()]
+    bytes_written = index_fetch['bytes_written'] + detail_fetch['bytes_written']
+    tertiary_raw_path = ''
+    if pdf_fetch:
+        checksum_parts.append(pdf_raw_path.read_bytes())
+        bytes_written += pdf_fetch['bytes_written']
+        tertiary_raw_path = str(pdf_raw_path)
 
     return {
         'capture_status': 'completed',
         'status_code': detail_fetch['status_code'],
         'content_type': detail_fetch['content_type'],
-        'bytes_written': index_fetch['bytes_written'] + detail_fetch['bytes_written'],
-        'checksum_sha256': hashlib.sha256(raw_path.read_bytes() + detail_raw_path.read_bytes()).hexdigest(),
+        'bytes_written': bytes_written,
+        'checksum_sha256': hashlib.sha256(b''.join(checksum_parts)).hexdigest(),
         'raw_path': str(raw_path),
         'secondary_raw_path': str(detail_raw_path),
+        'tertiary_raw_path': tertiary_raw_path,
         'metadata_source_url': index_url,
         'detail_page_url': candidate.get('detail_page_url', ''),
         'download_url': candidate.get('download_url', ''),
@@ -3909,7 +4408,8 @@ def build_unhcr_document_index_payload(
             'notes': (
                 f"UNHCR document index captured on {captured_utc}. Latest matching title: {candidate.get('title', 'not found')}; "
                 f"publish date: {candidate.get('publish_date', 'not found')}; upload date: {upload_date or 'not found'}; "
-                f"covered period: {latest_period_covered or 'not found'}."
+                f"covered period: {latest_period_covered or 'not found'}"
+                f"{'; extracted from linked PDF fallback' if pdf_fetch and latest_period_covered else '.'}"
             ),
         },
     }
@@ -3920,12 +4420,41 @@ def build_ipc_lebanon_analysis_payload(
     adapter_row: dict[str, str],
     raw_path: Path,
     captured_utc: str,
+    plans_dir: Path | None = None,
 ) -> dict[str, Any]:
+    source_id = manifest_row.get('source_id', '')
     page_url = ipc_lebanon_analysis_url(adapter_row.get('url', ''))
-    fetch_meta = fetch_direct_source(page_url, raw_path)
-    metadata = extract_ipc_lebanon_analysis_metadata(raw_path.read_text(errors='replace'), page_url)
-    if not metadata.get('latest_visible_date'):
-        raise ValueError('IPC Lebanon analysis page did not expose a release date.')
+    fallback = load_manual_finding(plans_dir, source_id)
+    metadata_source_url = fallback.get('evidence_link', '') or page_url
+    latest_visible_date = fallback.get('last_published_date', '')
+    latest_period_covered = fallback.get('latest_period_covered', '')
+    latest_report_url = fallback.get('evidence_link', '') or page_url
+    summary = fallback.get('notes', f"{manifest_row.get('source_name', '')} manual fallback evidence.")
+    fetch_meta = {'status_code': 0, 'content_type': 'text/plain', 'bytes_written': 0, 'checksum_sha256': ''}
+    try:
+        fetch_meta = fetch_direct_source(page_url, raw_path)
+        metadata = extract_ipc_lebanon_analysis_metadata(raw_path.read_text(errors='replace'), page_url)
+        if not metadata.get('latest_visible_date'):
+            raise ValueError('IPC Lebanon analysis page did not expose a release date.')
+        metadata_source_url = page_url
+        latest_visible_date = metadata.get('latest_visible_date', '')
+        latest_period_covered = metadata.get('latest_period_covered', '')
+        latest_report_url = metadata.get('latest_report_url', '')
+        summary = (
+            f"{manifest_row.get('source_name', '')} country-analysis page parsed for release date, validity window, and linked report PDF."
+        )
+    except (HTTPError, URLError, TimeoutError) as exc:
+        error_text = f"Collection blocked: {exc}"
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path.write_text(error_text, encoding='utf-8', errors='replace')
+        fetch_meta = {
+            'status_code': getattr(exc, 'code', 0) or 0,
+            'content_type': 'text/plain',
+            'bytes_written': len(error_text.encode()),
+            'checksum_sha256': hashlib.sha256(error_text.encode()).hexdigest(),
+        }
+        if not latest_visible_date:
+            raise
 
     return {
         'capture_status': 'completed',
@@ -3934,27 +4463,23 @@ def build_ipc_lebanon_analysis_payload(
         'bytes_written': fetch_meta['bytes_written'],
         'checksum_sha256': fetch_meta['checksum_sha256'],
         'raw_path': str(raw_path),
-        'metadata_source_url': page_url,
-        'latest_visible_date': metadata.get('latest_visible_date', ''),
-        'latest_period_covered': metadata.get('latest_period_covered', ''),
-        'latest_report_url': metadata.get('latest_report_url', ''),
-        'normalized_summary': f"{manifest_row.get('source_name', '')} country-analysis page parsed for release date, validity window, and linked report PDF.",
+        'metadata_source_url': metadata_source_url,
+        'latest_visible_date': latest_visible_date,
+        'latest_period_covered': latest_period_covered,
+        'latest_report_url': latest_report_url,
+        'normalized_summary': summary,
         'verification_updates': {
-            'source_id': manifest_row.get('source_id', ''),
+            'source_id': source_id,
             'last_checked_utc': captured_utc,
-            'last_published_date': metadata.get('latest_visible_date', ''),
-            'latest_period_covered': metadata.get('latest_period_covered', ''),
+            'last_published_date': latest_visible_date,
+            'latest_period_covered': latest_period_covered,
             'claim_date_utc': '',
             'owner': '',
-            'evidence_link': page_url,
+            'evidence_link': metadata_source_url,
             'evidence_path': '',
             'status': 'in_review',
             'next_action': 'Keep watching the IPC Lebanon country-analysis page for the next release date and validity-window update.',
-            'notes': (
-                f"IPC Lebanon analysis parsed on {captured_utc}. Release date: {metadata.get('latest_visible_date', 'not found')}; "
-                f"validity window: {metadata.get('latest_period_covered', 'not found')}; "
-                f"linked PDF: {metadata.get('latest_report_url', 'not found')}."
-            ),
+            'notes': summary,
         },
     }
 
@@ -3964,6 +4489,13 @@ def load_manual_finding(plans_dir: Path, source_id: str) -> dict[str, str]:
         return {}
     findings_path = plans_dir / 'source_verification_findings.csv'
     rows = load_existing_rows_by_key(findings_path, 'source_id')
+    return rows.get(source_id, {})
+
+
+def load_recent_accounting_finding(plans_dir: Path, source_id: str) -> dict[str, str]:
+    if not plans_dir:
+        return {}
+    rows = load_existing_recent_accounting(plans_dir / 'recent_accounting.csv')
     return rows.get(source_id, {})
 
 
@@ -3996,9 +4528,41 @@ def parse_ashdod_published_date(html: str) -> str:
         return parsed.date().isoformat() if parsed else ''
     return ''
 
+def extract_anyflip_url(text: str) -> str:
+    match = re.search(r'https://anyflip\.com/[^\s\'")]+', text)
+    return match.group(0).rstrip('.,;:') if match else ''
+
+def derive_ashdod_period_from_text(text: str) -> str:
+    normalized = html_lib.unescape(text)
+    year_match = re.search(r'(20\d{2})', normalized)
+    if not year_match:
+        return ''
+    year = year_match.group(1)
+    if re.search(r'תשעת חודשים ראשונים', normalized):
+        return f'{year}-09'
+    if re.search(r'מחצית ראשונה', normalized):
+        return f'{year}-06'
+    if re.search(r'רבעון ראשון', normalized):
+        return f'{year}-03'
+    if re.search(r'לשנת\s*20\d{2}', normalized) or re.search(r'שנת\s*20\d{2}', normalized):
+        return f'{year}-12'
+    return ''
+
 def parse_ashdod_period(html: str) -> str:
     match = re.search(r'Period\s*[:\-|–]\s*([0-9]{4}-[0-9]{2}|[0-9]+\s+[A-Za-z]+\s+[0-9]{4})', html, flags=re.IGNORECASE)
-    return match.group(1).strip() if match else ''
+    if match:
+        return match.group(1).strip()
+    title = extract_html_title(html)
+    if title:
+        derived = derive_ashdod_period_from_text(title)
+        if derived:
+            return derived
+    description_match = re.search(r'<meta\s+name="description"\s+content="([^"]+)"', html, flags=re.IGNORECASE)
+    if description_match:
+        derived = derive_ashdod_period_from_text(description_match.group(1))
+        if derived:
+            return derived
+    return derive_ashdod_period_from_text(html_to_visible_text(html))
 
 def build_ipc_gaza_snapshot_payload(
     manifest_row: dict[str, str],
@@ -4068,6 +4632,79 @@ def build_ipc_gaza_snapshot_payload(
         },
     }
 
+
+def build_iom_dtm_sudan_payload(
+    manifest_row: dict[str, str],
+    adapter_row: dict[str, str],
+    raw_path: Path,
+    captured_utc: str,
+    plans_dir: Path,
+) -> dict[str, Any]:
+    source_id = manifest_row.get('source_id', '')
+    source_url = adapter_row.get('url', '')
+    fallback = load_recent_accounting_finding(plans_dir, source_id)
+    latest_visible_date = fallback.get('last_published_date', '')
+    latest_period_covered = fallback.get('latest_period_covered', '')
+    claim_date_utc = fallback.get('claim_date_utc', '')
+    evidence_link = fallback.get('evidence_link', '') or source_url
+    next_action = fallback.get('next_action', 'Follow the IOM Sudan page for the next DTM displacement update.')
+    summary = fallback.get('notes', f"{manifest_row.get('source_name', '')} public page metadata preserved from the verified ledger.")
+    fetch_meta = {'status_code': 0, 'content_type': 'text/plain', 'bytes_written': 0, 'checksum_sha256': ''}
+
+    try:
+        fetch_meta = fetch_direct_source(source_url, raw_path)
+        if not latest_visible_date:
+            latest_visible_date = requests_head_last_modified(source_url)
+        if latest_visible_date:
+            summary = (
+                f"{manifest_row.get('source_name', '')} page fetched successfully; the verified accounting row remains "
+                'the active source for freshness metadata until a stable parser is added.'
+            )
+    except (HTTPError, URLError, TimeoutError) as exc:
+        error_text = f"Collection blocked: {exc}"
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path.write_text(error_text, encoding='utf-8', errors='replace')
+        fetch_meta = {
+            'status_code': getattr(exc, 'code', 0) or 0,
+            'content_type': 'text/plain',
+            'bytes_written': len(error_text.encode()),
+            'checksum_sha256': hashlib.sha256(error_text.encode()).hexdigest(),
+        }
+        if latest_visible_date or latest_period_covered:
+            summary = (
+                f"{manifest_row.get('source_name', '')} public page was blocked; preserving the latest verified "
+                'accounting row as fallback evidence until a collectible public metadata surface is available.'
+            )
+        else:
+            raise
+
+    return {
+        'capture_status': 'completed',
+        'status_code': fetch_meta['status_code'],
+        'content_type': fetch_meta['content_type'],
+        'bytes_written': fetch_meta['bytes_written'],
+        'checksum_sha256': fetch_meta['checksum_sha256'],
+        'raw_path': str(raw_path),
+        'metadata_source_url': source_url,
+        'latest_visible_date': latest_visible_date,
+        'latest_period_covered': latest_period_covered,
+        'normalized_summary': summary,
+        'verification_updates': {
+            'source_id': source_id,
+            'last_checked_utc': captured_utc,
+            'last_published_date': latest_visible_date,
+            'latest_period_covered': latest_period_covered,
+            'claim_date_utc': claim_date_utc,
+            'owner': '',
+            'evidence_link': evidence_link,
+            'evidence_path': '',
+            'status': fallback.get('status', 'in_review') or 'in_review',
+            'next_action': next_action,
+            'notes': summary,
+        },
+    }
+
+
 def build_ashdod_port_financials_payload(
     manifest_row: dict[str, str],
     adapter_row: dict[str, str],
@@ -4078,12 +4715,14 @@ def build_ashdod_port_financials_payload(
     source_id = manifest_row.get('source_id', '')
     source_url = adapter_row.get('url', '')
     fallback = load_manual_finding(plans_dir, source_id)
-    metadata_source_url = fallback.get('evidence_link', source_url)
+    metadata_source_url = source_url
     title = fallback.get('notes', manifest_row.get('source_name', 'Ashdod Port update'))
     latest_visible_date = fallback.get('last_published_date', '')
     latest_period_covered = fallback.get('latest_period_covered', '')
     summary = fallback.get('notes', f"{manifest_row.get('source_name', '')} fallback update capture.")
     fetch_meta = {'status_code': 0, 'content_type': 'text/plain', 'bytes_written': 0, 'checksum_sha256': ''}
+    secondary_raw_path = ''
+    mirror_evidence_link = ''
     try:
         fetch_meta = fetch_direct_source(source_url, raw_path)
         page_html = raw_path.read_text(errors='replace')
@@ -4107,8 +4746,37 @@ def build_ashdod_port_financials_payload(
             'bytes_written': len(error_text.encode()),
             'checksum_sha256': hashlib.sha256(error_text.encode()).hexdigest(),
         }
-        metadata_source_url = fallback.get('evidence_link', source_url)
         summary = fallback.get('notes', summary)
+        fallback_url = fallback.get('evidence_link', '').strip()
+        if not fallback_url or fallback_url == source_url:
+            fallback_url = extract_anyflip_url(fallback.get('notes', ''))
+        if fallback_url and fallback_url != source_url:
+            fallback_raw_path = raw_path.with_name(f'{raw_path.stem}-fallback{raw_path.suffix}')
+            try:
+                fallback_fetch = fetch_direct_source(fallback_url, fallback_raw_path)
+                fallback_html = fallback_raw_path.read_text(errors='replace')
+                parsed_title = extract_html_title(fallback_html) or title
+                parsed_date = parse_ashdod_published_date(fallback_html)
+                if parsed_date:
+                    latest_visible_date = parsed_date
+                parsed_period = parse_ashdod_period(fallback_html)
+                if parsed_period:
+                    latest_period_covered = parsed_period
+                mirror_evidence_link = fallback_url
+                title = parsed_title or title
+                summary = (
+                    f"{manifest_row.get('source_name', '')} official hub was blocked; metadata was parsed from the "
+                    f"AnyFlip mirror fallback at {fallback_url}."
+                )
+                secondary_raw_path = str(fallback_raw_path)
+                fetch_meta = {
+                    'status_code': fallback_fetch['status_code'],
+                    'content_type': fallback_fetch['content_type'],
+                    'bytes_written': len(error_text.encode()) + fallback_fetch['bytes_written'],
+                    'checksum_sha256': hashlib.sha256(raw_path.read_bytes() + fallback_raw_path.read_bytes()).hexdigest(),
+                }
+            except (HTTPError, URLError, TimeoutError):
+                pass
     return {
         'capture_status': 'completed',
         'status_code': fetch_meta['status_code'],
@@ -4116,7 +4784,9 @@ def build_ashdod_port_financials_payload(
         'bytes_written': fetch_meta['bytes_written'],
         'checksum_sha256': fetch_meta['checksum_sha256'],
         'raw_path': str(raw_path),
+        'secondary_raw_path': secondary_raw_path,
         'metadata_source_url': metadata_source_url,
+        'mirror_evidence_link': mirror_evidence_link,
         'document_title': title,
         'latest_visible_date': latest_visible_date,
         'latest_period_covered': latest_period_covered,
@@ -4129,6 +4799,7 @@ def build_ashdod_port_financials_payload(
             'claim_date_utc': '',
             'owner': '',
             'evidence_link': metadata_source_url,
+            'mirror_evidence_link': mirror_evidence_link,
             'evidence_path': '',
             'status': 'in_review',
             'next_action': 'Track the Ashdod financial-information hub and the newest linked presentation to capture future releases.',
@@ -4186,36 +4857,75 @@ def build_wfp_lebanon_factsheet_pdf_payload(
     raw_path: Path,
     captured_utc: str,
 ) -> dict[str, Any]:
-    pdf_url = wfp_lebanon_programme_factsheet_pdf_url(adapter_row.get('url', ''))
-    fetch_meta = fetch_direct_source(pdf_url, raw_path)
+    source_url = adapter_row.get('url', '')
+    pdf_url = wfp_lebanon_programme_factsheet_pdf_url(source_url)
+    metadata_source_url = pdf_url
+    evidence_link = pdf_url
+    document_title = ''
+    latest_visible_date = ''
+    latest_period_covered = ''
+    secondary_raw_path = ''
+    checksum_parts: list[bytes] = []
+    bytes_written = 0
+
+    if source_url.startswith('file://') or source_url.endswith('.pdf'):
+        fetch_meta = fetch_direct_source(pdf_url, raw_path)
+    else:
+        page_raw_path = raw_path.with_name(f'{raw_path.stem}-page.html')
+        page_fetch = fetch_direct_source(source_url, page_raw_path)
+        page_html = page_raw_path.read_text(errors='replace')
+        page_metadata = extract_wfp_lebanon_programme_page_metadata(page_html, source_url)
+        pdf_url = page_metadata.get('document_download_url', '') or pdf_url
+        document_title = page_metadata.get('document_title', '')
+        latest_visible_date = page_metadata.get('last_published_date', '')
+        latest_period_covered = page_metadata.get('latest_period_covered', '')
+        metadata_source_url = source_url
+        evidence_link = source_url
+        secondary_raw_path = str(page_raw_path)
+        checksum_parts.append(page_raw_path.read_bytes())
+        bytes_written += page_fetch['bytes_written']
+        fetch_meta = fetch_direct_source(pdf_url, raw_path)
+
     report_date = pdfinfo_report_date(raw_path)
     pdf_text = pdftotext_content(raw_path)
-    latest_period_covered = extract_wfp_lebanon_factsheet_period(pdf_text)
+    latest_visible_date = latest_visible_date or report_date
+    latest_period_covered = latest_period_covered or extract_wfp_lebanon_factsheet_period(pdf_text)
+    checksum_parts.append(raw_path.read_bytes())
+    bytes_written += fetch_meta['bytes_written']
+
     return {
         'capture_status': 'completed',
         'status_code': fetch_meta['status_code'],
         'content_type': fetch_meta['content_type'],
-        'bytes_written': fetch_meta['bytes_written'],
-        'checksum_sha256': fetch_meta['checksum_sha256'],
+        'bytes_written': bytes_written,
+        'checksum_sha256': hashlib.sha256(b''.join(checksum_parts)).hexdigest(),
         'raw_path': str(raw_path),
-        'metadata_source_url': pdf_url,
-        'latest_visible_date': report_date,
+        'secondary_raw_path': secondary_raw_path,
+        'metadata_source_url': metadata_source_url,
+        'document_title': document_title,
+        'document_download_url': pdf_url,
+        'latest_visible_date': latest_visible_date,
         'latest_period_covered': latest_period_covered,
-        'normalized_summary': f"{manifest_row.get('source_name', '')} PDF captured from the current WFP Lebanon programme factsheet document.",
+        'normalized_summary': (
+            f"{manifest_row.get('source_name', '')} publication page parsed and linked PDF captured from the current "
+            'WFP Lebanon programme factsheet release.'
+        ),
         'verification_updates': {
             'source_id': manifest_row.get('source_id', ''),
             'last_checked_utc': captured_utc,
-            'last_published_date': report_date,
+            'last_published_date': latest_visible_date,
             'latest_period_covered': latest_period_covered,
             'claim_date_utc': '',
             'owner': '',
-            'evidence_link': pdf_url,
+            'evidence_link': evidence_link,
             'evidence_path': '',
             'status': 'in_review',
             'next_action': 'Monitor the current WFP Lebanon programme factsheet page and update the pinned document URL when a newer release appears.',
             'notes': (
-                f"WFP Lebanon factsheet PDF captured on {captured_utc}. PDF metadata date: {report_date or 'not found'}; "
-                f"latest visible coverage marker: {latest_period_covered or 'not found'}."
+                f"WFP Lebanon factsheet capture parsed on {captured_utc}. Evidence page: {evidence_link}; "
+                f"selected document: {pdf_url or 'not found'}; publication date: {latest_visible_date or 'not found'}; "
+                f"PDF metadata date: {report_date or 'not found'}; latest visible coverage marker: "
+                f"{latest_period_covered or 'not found'}."
             ),
         },
     }
@@ -4284,6 +4994,21 @@ def build_unctad_maritime_insights_payload(
     metadata = extract_unctad_maritime_insights_metadata(raw_path.read_text(errors='replace'), page_url)
     if not metadata.get('latest_visible_date'):
         raise ValueError('UNCTAD maritime insights page did not expose a visible updated date.')
+    metadata_link = metadata.get('metadata_link', page_url) or page_url
+    secondary_raw_path = ''
+    if metadata_link != page_url:
+        detail_raw_path = raw_path.with_name(f'{raw_path.stem}-datacentre{raw_path.suffix}')
+        try:
+            detail_fetch = fetch_direct_source(metadata_link, detail_raw_path)
+            secondary_raw_path = str(detail_raw_path)
+            fetch_meta = {
+                'status_code': fetch_meta['status_code'],
+                'content_type': fetch_meta['content_type'],
+                'bytes_written': fetch_meta['bytes_written'] + detail_fetch['bytes_written'],
+                'checksum_sha256': hashlib.sha256(raw_path.read_bytes() + detail_raw_path.read_bytes()).hexdigest(),
+            }
+        except (HTTPError, URLError, TimeoutError):
+            secondary_raw_path = ''
     return {
         'capture_status': 'completed',
         'status_code': fetch_meta['status_code'],
@@ -4291,24 +5016,27 @@ def build_unctad_maritime_insights_payload(
         'bytes_written': fetch_meta['bytes_written'],
         'checksum_sha256': fetch_meta['checksum_sha256'],
         'raw_path': str(raw_path),
+        'secondary_raw_path': secondary_raw_path,
         'metadata_source_url': page_url,
         'latest_visible_date': metadata.get('latest_visible_date', ''),
-        'latest_report_url': metadata.get('metadata_link', page_url),
+        'latest_report_url': metadata_link,
+        'latest_period_covered': metadata.get('latest_period_covered', ''),
         'normalized_summary': f"{manifest_row.get('source_name', '')} theme page parsed for the latest 'Data updated on' marker.",
         'verification_updates': {
             'source_id': manifest_row.get('source_id', ''),
             'last_checked_utc': captured_utc,
             'last_published_date': metadata.get('latest_visible_date', ''),
-            'latest_period_covered': '',
+            'latest_period_covered': metadata.get('latest_period_covered', ''),
             'claim_date_utc': '',
             'owner': '',
-            'evidence_link': metadata.get('metadata_link', page_url),
+            'evidence_link': metadata_link,
             'evidence_path': '',
             'status': 'in_review',
             'next_action': 'Monitor the UNCTAD maritime insights theme page and its linked data-centre metadata pages for fresher updates.',
             'notes': (
                 f"UNCTAD maritime insights page parsed on {captured_utc}. Latest visible update date: "
-                f"{metadata.get('latest_visible_date', 'not found')}; selected insight: {metadata.get('latest_title', 'not found')}."
+                f"{metadata.get('latest_visible_date', 'not found')}; selected insight: {metadata.get('latest_title', 'not found')}; "
+                f"covered period: {metadata.get('latest_period_covered', 'not found') or 'not found'}."
             ),
         },
     }
@@ -4330,6 +5058,19 @@ def build_sca_navigation_news_payload(
     detail_fetch = fetch_direct_source(candidate['detail_url'], detail_raw_path)
     detail = extract_sca_navigation_news_detail(detail_raw_path.read_text(errors='replace'))
     last_published_date = detail.get('detail_date') or candidate.get('latest_visible_date', '')
+    daily_summary = ''
+    if detail.get('daily_vessel_count') and detail.get('daily_gross_tonnage_mtons'):
+        daily_summary = (
+            f"same-day transit: {detail.get('daily_vessel_count')} vessels / "
+            f"{detail.get('daily_gross_tonnage_mtons')} million tons"
+        )
+    rolling_summary = ''
+    if detail.get('rolling_three_day_vessel_count') and detail.get('rolling_three_day_gross_tonnage_mtons'):
+        rolling_summary = (
+            f"rolling three-day transit: {detail.get('rolling_three_day_vessel_count')} vessels / "
+            f"{detail.get('rolling_three_day_gross_tonnage_mtons')} million tons"
+        )
+    notes_suffix = '; '.join(part for part in [daily_summary, rolling_summary] if part)
     return {
         'capture_status': 'completed',
         'status_code': detail_fetch['status_code'],
@@ -4341,14 +5082,21 @@ def build_sca_navigation_news_payload(
         'metadata_source_url': index_url,
         'detail_page_url': candidate['detail_url'],
         'latest_visible_date': last_published_date,
+        'claim_date_utc': detail.get('detail_date', ''),
         'document_title': detail.get('title') or candidate.get('title', ''),
+        'daily_vessel_count': detail.get('daily_vessel_count', ''),
+        'daily_gross_tonnage_mtons': detail.get('daily_gross_tonnage_mtons', ''),
+        'northbound_vessel_count': detail.get('northbound_vessel_count', ''),
+        'southbound_vessel_count': detail.get('southbound_vessel_count', ''),
+        'rolling_three_day_vessel_count': detail.get('rolling_three_day_vessel_count', ''),
+        'rolling_three_day_gross_tonnage_mtons': detail.get('rolling_three_day_gross_tonnage_mtons', ''),
         'normalized_summary': f"{manifest_row.get('source_name', '')} latest navigation-news item resolved from the SCA news index.",
         'verification_updates': {
             'source_id': manifest_row.get('source_id', ''),
             'last_checked_utc': captured_utc,
             'last_published_date': last_published_date,
             'latest_period_covered': '',
-            'claim_date_utc': '',
+            'claim_date_utc': detail.get('detail_date', ''),
             'owner': '',
             'evidence_link': candidate['detail_url'],
             'evidence_path': '',
@@ -4356,7 +5104,8 @@ def build_sca_navigation_news_payload(
             'next_action': 'Keep following the SCA news index and promote the latest navigation-news detail page on each rerun.',
             'notes': (
                 f"SCA navigation news index parsed on {captured_utc}. Latest navigation-news date: "
-                f"{last_published_date or 'not found'}; selected title: {detail.get('title') or candidate.get('title', 'not found')}."
+                f"{last_published_date or 'not found'}; selected title: {detail.get('title') or candidate.get('title', 'not found')}"
+                f"{'; ' + notes_suffix if notes_suffix else '.'}"
             ),
         },
     }
@@ -4366,20 +5115,39 @@ def stage_query_request_spec(
     manifest_row: dict[str, str],
     adapter_row: dict[str, str],
     collection_dir: Path,
+    plans_dir: Path,
     raw_path: Path,
 ) -> dict[str, Any]:
     query_seed_name = adapter_row.get('query_seed_file', '')
     query_seed_path = collection_dir / query_seed_name if query_seed_name else None
     query_rows = load_csv_rows(query_seed_path) if query_seed_path and query_seed_path.is_file() else []
-    relevant_queries = [row for row in query_rows if row.get('country') in {manifest_row.get('district_scope', ''), manifest_row.get('district_scope', '').split(';')[0].strip()}]
+    connector_rows = load_existing_rows_by_key(plans_dir / 'connector_readiness.csv', 'source_id')
+    connector_row = connector_rows.get(manifest_row.get('source_id', ''), {})
+    district_scope = manifest_row.get('district_scope', '')
+    district_names = {value.strip() for value in district_scope.split(';') if value.strip()}
+    relevant_queries = [
+        row
+        for row in query_rows
+        if row.get('district_name', '').strip() in district_names
+        or row.get('country', '').strip() in district_names
+    ]
     payload = {
         'run_id': manifest_row.get('run_id', ''),
         'source_id': manifest_row.get('source_id', ''),
         'source_name': manifest_row.get('source_name', ''),
         'adapter_type': manifest_row.get('adapter_type', ''),
-        'district_scope': manifest_row.get('district_scope', ''),
+        'district_scope': district_scope,
         'query_seed_file': adapter_row.get('query_seed_file', ''),
         'query_count': len(query_rows),
+        'matched_query_count': len(relevant_queries),
+        'connector_status': connector_row.get('status', ''),
+        'credential_state': connector_row.get('credential_state', ''),
+        'connector_priority': connector_row.get('priority', ''),
+        'connector_owner': connector_row.get('owner', ''),
+        'connector_next_action': connector_row.get('next_action', ''),
+        'connector_notes': connector_row.get('notes', ''),
+        'connector_url': connector_row.get('url', ''),
+        'queries': relevant_queries,
         'status': 'awaiting_external_execution',
     }
     raw_path.parent.mkdir(parents=True, exist_ok=True)
@@ -4391,6 +5159,13 @@ def stage_query_request_spec(
         'checksum_sha256': hashlib.sha256(raw_path.read_bytes()).hexdigest(),
         'query_count': len(query_rows),
         'matched_queries': len(relevant_queries),
+        'connector_status': connector_row.get('status', ''),
+        'credential_state': connector_row.get('credential_state', ''),
+        'connector_priority': connector_row.get('priority', ''),
+        'connector_owner': connector_row.get('owner', ''),
+        'connector_next_action': connector_row.get('next_action', ''),
+        'connector_notes': connector_row.get('notes', ''),
+        'connector_url': connector_row.get('url', ''),
     }
 
 
@@ -4405,6 +5180,30 @@ def write_collection_rows(
     rows: list[dict[str, Any]],
 ) -> None:
     write_rows_csv(fieldnames, rows, path)
+
+
+def requeue_due_collection_runs(
+    manifest_rows: list[dict[str, str]],
+    accounting_rows: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    accounting_lookup = {row.get('source_id', ''): row for row in accounting_rows if row.get('source_id')}
+    requeue_statuses = {'unknown', 'due_now', 'overdue', 'manual_review'}
+    rerunnable_statuses = {'completed', 'failed', 'staged_external'}
+    scheduled_utc = utc_now().isoformat().replace('+00:00', 'Z')
+
+    for manifest_row in manifest_rows:
+        accounting_row = accounting_lookup.get(manifest_row.get('source_id', ''))
+        if accounting_row is None:
+            continue
+        if accounting_row.get('priority_tier') != 'tier1':
+            continue
+        if accounting_row.get('recency_status') not in requeue_statuses:
+            continue
+        if manifest_row.get('status') not in rerunnable_statuses:
+            continue
+        manifest_row['status'] = 'ready'
+        manifest_row['scheduled_run_utc'] = scheduled_utc
+    return manifest_rows
 
 
 def process_collection_run(
@@ -4438,30 +5237,17 @@ def process_collection_run(
         result_status = 'completed'
         result_notes = 'UNHCR document index fetch completed.'
     elif adapter_type == 'ipc_lebanon_analysis':
-        try:
-            normalized_payload.update(build_ipc_lebanon_analysis_payload(manifest_row, adapter_row, raw_path, now))
-            result_status = 'completed'
-            result_notes = 'IPC Lebanon analysis fetch completed.'
-        except HTTPError as exc:
-            if exc.code not in {403, 429}:
-                raise
-            fetch_meta = stage_query_request_spec(manifest_row, adapter_row, collection_dir, raw_path)
-            normalized_payload.update(
-                {
-                    'capture_status': 'staged_external',
-                    'query_seed_file': adapter_row.get('query_seed_file', ''),
-                    'query_count': fetch_meta.get('query_count', 0),
-                    'matched_queries': fetch_meta.get('matched_queries', 0),
-                    'checksum_sha256': fetch_meta['checksum_sha256'],
-                    'raw_path': str(raw_path),
-                }
-            )
-            result_status = 'staged_external'
-            result_notes = f'IPC collector blocked upstream ({exc.code}); staged for browser export instead.'
+        normalized_payload.update(build_ipc_lebanon_analysis_payload(manifest_row, adapter_row, raw_path, now, plans_dir))
+        result_status = 'completed'
+        result_notes = 'IPC Lebanon analysis fetch completed.'
     elif adapter_type == 'ipc_gaza_snapshot':
         normalized_payload.update(build_ipc_gaza_snapshot_payload(manifest_row, adapter_row, raw_path, now, plans_dir))
         result_status = 'completed'
         result_notes = 'IPC Gaza snapshot capture completed.'
+    elif adapter_type == 'iom_dtm_sudan':
+        normalized_payload.update(build_iom_dtm_sudan_payload(manifest_row, adapter_row, raw_path, now, plans_dir))
+        result_status = 'completed'
+        result_notes = 'IOM DTM Sudan fallback capture completed.'
     elif adapter_type == 'ashdod_port_financials':
         normalized_payload.update(build_ashdod_port_financials_payload(manifest_row, adapter_row, raw_path, now, plans_dir))
         result_status = 'completed'
@@ -4490,6 +5276,10 @@ def process_collection_run(
         normalized_payload.update(build_lebanon_cas_cpi_payload(manifest_row, adapter_row, raw_path, now))
         result_status = 'completed'
         result_notes = 'Lebanon CAS CPI feed capture completed.'
+    elif adapter_type == 'saudi_gastat_cpi':
+        normalized_payload.update(build_saudi_gastat_cpi_payload(manifest_row, adapter_row, raw_path, now))
+        result_status = 'completed'
+        result_notes = 'Saudi GASTAT CPI page capture completed.'
     elif adapter_type == 'usda_fas_gain_pdf':
         normalized_payload.update(build_usda_fas_gain_pdf_payload(manifest_row, adapter_row, raw_path, now))
         result_status = 'completed'
@@ -4529,13 +5319,20 @@ def process_collection_run(
         result_status = 'completed'
         result_notes = 'Direct source fetch completed.'
     else:
-        fetch_meta = stage_query_request_spec(manifest_row, adapter_row, collection_dir, raw_path)
+        fetch_meta = stage_query_request_spec(manifest_row, adapter_row, collection_dir, plans_dir, raw_path)
         normalized_payload.update(
             {
                 'capture_status': 'staged_external',
                 'query_seed_file': adapter_row.get('query_seed_file', ''),
                 'query_count': fetch_meta.get('query_count', 0),
                 'matched_queries': fetch_meta.get('matched_queries', 0),
+                'connector_status': fetch_meta.get('connector_status', ''),
+                'credential_state': fetch_meta.get('credential_state', ''),
+                'connector_priority': fetch_meta.get('connector_priority', ''),
+                'connector_owner': fetch_meta.get('connector_owner', ''),
+                'connector_next_action': fetch_meta.get('connector_next_action', ''),
+                'connector_notes': fetch_meta.get('connector_notes', ''),
+                'connector_url': fetch_meta.get('connector_url', ''),
                 'checksum_sha256': fetch_meta['checksum_sha256'],
                 'raw_path': str(raw_path),
             }
@@ -4586,6 +5383,9 @@ def run_collection_pack(args: argparse.Namespace, records: list[dict[str, Any]])
     adapter_lookup = load_adapter_lookup(paths['adapter_registry'])
     evidence_rows = load_csv_rows(paths['evidence_log'])
     result_rows = load_csv_rows(paths['run_results'])
+    accounting_rows = load_csv_rows(plans_dir / 'recent_accounting.csv')
+
+    manifest_rows = requeue_due_collection_runs(manifest_rows, accounting_rows)
 
     ready_rows = [row for row in manifest_rows if row.get('status') == 'ready']
     processed = 0
@@ -4855,7 +5655,7 @@ def build_event_timeline_rows() -> list[dict[str, Any]]:
             'event_window_start': '2025-03-02',
             'event_window_end': '',
             'source_name': 'OCHA OPT Gaza updates; IPC Gaza snapshot',
-            'source_url': 'https://www.ochaopt.org/content/gaza-humanitarian-response-update-30-march-12-april-2025; https://www.ipcinfo.org/fileadmin/user_upload/ipcinfo/docs/IPC_Gaza_Strip_Acute_Food_Insecurity_Malnutrition_Apr_Sept2025_Special_Snapshot.pdf',
+            'source_url': 'https://www.ochaopt.org/publications/situation-reports; https://www.ipcinfo.org/fileadmin/user_upload/ipcinfo/docs/IPC_Gaza_Strip_Acute_Food_Insecurity_Malnutrition_Apr_Sept2025_Special_Snapshot.pdf',
             'source_accessed_utc': '',
             'confidence': 'high',
             'summary': 'Supply blockade date used to anchor Gaza market-collapse analysis.',
@@ -4871,7 +5671,7 @@ def build_event_timeline_rows() -> list[dict[str, Any]]:
             'event_window_start': '2025-03-18',
             'event_window_end': '',
             'source_name': 'OCHA OPT Gaza updates; IPC Gaza snapshot',
-            'source_url': 'https://www.ochaopt.org/content/gaza-humanitarian-response-update-30-march-12-april-2025; https://www.ipcinfo.org/fileadmin/user_upload/ipcinfo/docs/IPC_Gaza_Strip_Acute_Food_Insecurity_Malnutrition_Apr_Sept2025_Special_Snapshot.pdf',
+            'source_url': 'https://www.ochaopt.org/publications/situation-reports; https://www.ipcinfo.org/fileadmin/user_upload/ipcinfo/docs/IPC_Gaza_Strip_Acute_Food_Insecurity_Malnutrition_Apr_Sept2025_Special_Snapshot.pdf',
             'source_accessed_utc': '',
             'confidence': 'high',
             'summary': 'Renewed hostilities date used to measure post-shock market deterioration.',

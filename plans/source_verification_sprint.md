@@ -1,6 +1,6 @@
 # Source Verification Sprint
 
-_Generated: 2026-03-26T05:55:58Z._
+_Generated: 2026-03-28T14:20:49Z._
 
 ## Purpose
 - Keep source verification rerunnable and keyed by `source_id`.
@@ -9,14 +9,11 @@ _Generated: 2026-03-26T05:55:58Z._
 - Sync verification lanes without duplicating milestone tasks.
 
 ## Snapshot
-- verified: 23
+- verified: 2
 
 ## Lanes
-- baseline_refresh: 9
-- humanitarian_feed: 3
-- macro_price: 4
-- market_monitor: 5
-- proxy_refresh: 2
+- humanitarian_feed: 1
+- market_monitor: 1
 
 ## Rerun
 - `python bootstrap.py --verification-sprint` refreshes the ledger-backed tracker and `VER-*` queue rows.

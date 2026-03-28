@@ -57,33 +57,33 @@ This is the highest-leverage path because every later capability depends on know
 ## Current Readiness Report
 
 ### Current repo state
-- Total tracked sources: 20
-- Current sources: 1
-- Overdue sources: 2
-- Unknown sources: 17
-- Completed queue tasks: 2
-- In-progress queue tasks: 1
+- Total tracked sources: 30
+- Current sources: 21
+- Due-now sources: 2
+- Overdue sources: 0
+- Unknown sources: 6
+- Active recent-accounting queue tasks: 1 (`ACC-RA-033`)
 
 ### Verified source status
-- `seed-01` UNHCR Egypt: verified on 2026-03-25, latest publication 2026-03-05, latest period covered 2026-02-28, status `overdue`
-- `seed-02` IOM DTM Sudan: verified on 2026-03-25, latest publication 2024-09-17, latest period covered 2024-09-10, status `overdue`
-- `seed-05` OCHA OPT Gaza updates: verified on 2026-03-25, latest publication 2026-03-19, latest period covered 2026-03-19, status `current`
+- `seed-01` UNHCR Egypt: current
+- `seed-02` IOM DTM Sudan: current via blocked-public-source fallback
+- `seed-05` OCHA OPT Gaza updates: current on the live `publications/situation-reports` endpoint
+- `seed-33` Ashdod Port: `due_now`, still the only real tier-1 recency blocker
 
 ### Queue state
-- `ACC-001`: completed
-- `ACC-002`: completed
-- `ACC-003`: in progress
-- `ACC-004`: pending
-- `ACC-005`: pending
+- `ACC-RA-033`: pending
+- `VER-001`: completed
+- `VER-003`: completed
+- `VER-004`: completed
 
 ### Why this matters
-- The repo can now distinguish between a verified but stale source and a source that has never been checked.
-- Egypt baseline work is no longer blocked by uncertainty about whether the source rows were ever touched.
-- The next bottleneck is not more planning. It is clearing the tier-1 `unknown` rows and freezing district/control choices.
+- The repo has moved past broad source-accounting cleanup into collection-loop hardening.
+- Egypt baseline work is no longer blocked by `seed-01` or `seed-02`.
+- The next bottleneck is staged external execution quality for the place-query stack plus the remaining Ashdod access/freshness blocker.
 
 ## Recommended Next Move
 
 Use Path 1 as the control layer, then sequence Path 2 and Path 4 behind it:
-1. Clear the remaining tier-1 `unknown` rows in `plans/recent_accounting.csv`.
-2. Auto-generate due tasks from source cadence into `plans/work_queue.csv`.
-3. Freeze Egypt district/control pairs and start anomaly generation only after the baseline rows are defensible.
+1. Keep `seed-33` explicit as the only remaining tier-1 recency blocker.
+2. Improve staged external execution contracts for `seed-11` and `seed-12`.
+3. Freeze Egypt district/control pairs and start anomaly generation only after the place-query handoff is operationally usable.

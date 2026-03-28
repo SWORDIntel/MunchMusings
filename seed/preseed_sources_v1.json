@@ -77,7 +77,7 @@
     ],
     "primary_use": "Market-collapse and humanitarian deterioration timeline for Gaza baseline analysis.",
     "notes": "Treat Gaza as market-functionality collapse, not preference analysis.",
-    "url": "https://www.ochaopt.org/content/gaza-humanitarian-response-update-30-march-12-april-2025"
+    "url": "https://www.ochaopt.org/publications/situation-reports"
   },
   {
     "rank": 6,
@@ -115,7 +115,7 @@
     "rank": 8,
     "source_name": "WFP Retail and Markets factsheet",
     "source_family": "market",
-    "priority_tier": "tier1",
+    "priority_tier": "tier2",
     "region_or_country": "Lebanon",
     "access_type": "pdf",
     "refresh_cadence": "periodic",
@@ -124,7 +124,7 @@
       "csv"
     ],
     "primary_use": "Retail and market-functionality context for Lebanon and confound handling.",
-    "notes": "Support source, not standalone detection evidence.",
+    "notes": "Support source for market context and confound handling, not standalone detection evidence.",
     "url": "https://www.wfp.org/publications-WFP-Lebanon-Programme-Factsheets-2025"
   },
   {
@@ -364,8 +364,8 @@
       "csv"
     ],
     "primary_use": "Official Lebanon CPI context for distinguishing market stress, inflation, and FX-driven effects from local anomaly candidates.",
-    "notes": "Primary official macro-price control for Lebanon analysis.",
-    "url": "https://www.beta.cas.gov.lb/economic-statistics/cpi/"
+    "notes": "Primary official macro-price control for Lebanon analysis. Prefer the legacy CAS monthly CPI publication page and linked PDFs for freshness; treat the beta JSON dashboard as secondary context.",
+    "url": "http://cas.gov.lb/index.php/economic-statistics-en/cpi-en/"
   },
   {
     "rank": 24,
@@ -387,7 +387,7 @@
     "rank": 25,
     "source_name": "HDX Signals",
     "source_family": "humanitarian_feed",
-    "priority_tier": "tier1",
+    "priority_tier": "tier2",
     "region_or_country": "Global",
     "access_type": "html",
     "refresh_cadence": "weekly",
@@ -395,8 +395,8 @@
       "json",
       "csv"
     ],
-    "primary_use": "Change-detection feed for spotting significant shifts in humanitarian datasets, including food prices and displacement-related indicators.",
-    "notes": "Use to reduce source drift and highlight what changed since the last collection cycle.",
+    "primary_use": "Derivative change-detection monitor for spotting significant shifts in humanitarian datasets, including food prices and displacement-related indicators.",
+    "notes": "Use to reduce source drift and highlight what changed since the last collection cycle, not as a primary baseline source.",
     "url": "https://data.humdata.org/signals"
   },
   {
@@ -454,7 +454,7 @@
     "priority_tier": "tier1",
     "region_or_country": "Global",
     "access_type": "html/pdf",
-    "refresh_cadence": "periodic",
+    "refresh_cadence": "quarterly",
     "output_formats": [
       "json",
       "csv"
@@ -470,7 +470,7 @@
     "priority_tier": "tier1",
     "region_or_country": "Regional",
     "access_type": "html/pdf",
-    "refresh_cadence": "periodic",
+    "refresh_cadence": "monthly",
     "output_formats": [
       "json",
       "csv"
