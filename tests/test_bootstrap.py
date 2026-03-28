@@ -582,6 +582,52 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(queue_lookup['EXT-012']['status'], 'pending')
         self.assertEqual(queue_lookup['EXT-012']['agent'], 'proxy_accountant')
 
+    def test_build_connector_queue_rows_carries_staged_contract_metadata_into_ext_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            normalized_path = tmp_path / 'seed-12.json'
+            normalized_path.write_text(
+                json.dumps(
+                    {
+                        'source_spec_path': 'plans/source_specs/overpass_cairo_giza_collection.json',
+                        'request_method': 'POST',
+                        'connector_status': 'ready',
+                        'credential_state': 'public_endpoint',
+                        'query_seed_path': 'artifacts/collection/overpass-query-seeds.csv',
+                        'district_scope': 'Imbaba; Shubra El Kheima',
+                        'queries': [{'district_name': 'Imbaba'}, {'district_name': 'Shubra El Kheima'}],
+                    }
+                )
+            )
+            queue_rows = bootstrap.build_connector_queue_rows(
+                [
+                    {
+                        'connector_id': 'CON-012',
+                        'status': 'ready',
+                        'priority': 'high',
+                        'owner': 'proxy_accountant',
+                        'source_id': 'seed-12',
+                        'region_or_country': 'Regional',
+                        'source_name': 'OpenStreetMap Overpass',
+                        'query_seed_file': 'overpass-query-seeds.csv',
+                        'credential_state': 'public_endpoint',
+                    }
+                ],
+                {},
+                {
+                    'seed-12': {'source_id': 'seed-12', 'expected_artifact': str(normalized_path)},
+                },
+            )
+            queue_row = queue_rows[0]
+
+            self.assertEqual(queue_row['source_spec_path'], 'plans/source_specs/overpass_cairo_giza_collection.json')
+            self.assertEqual(queue_row['request_method'], 'POST')
+            self.assertEqual(queue_row['connector_status'], 'ready')
+            self.assertEqual(queue_row['credential_state'], 'public_endpoint')
+            self.assertEqual(queue_row['query_seed_path'], 'artifacts/collection/overpass-query-seeds.csv')
+            self.assertEqual(queue_row['district_scope'], 'Imbaba; Shubra El Kheima')
+            self.assertEqual(queue_row['query_count'], '2')
+
     def test_build_connector_queue_rows_omits_nonstaged_connector_sources(self) -> None:
         connector_rows = [
             {

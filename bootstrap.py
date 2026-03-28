@@ -842,6 +842,26 @@ def connector_queue_acceptance_criteria(row: dict[str, str]) -> str:
     )
 
 
+def load_staged_contract_queue_metadata(manifest_row: dict[str, str]) -> dict[str, str]:
+    normalized_path = Path(manifest_row.get('expected_artifact', ''))
+    if not normalized_path.exists():
+        return {}
+    try:
+        payload = json.loads(normalized_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    queries = payload.get('queries') or []
+    return {
+        'source_spec_path': payload.get('source_spec_path', ''),
+        'request_method': payload.get('request_method', ''),
+        'connector_status': payload.get('connector_status', ''),
+        'credential_state': payload.get('credential_state', ''),
+        'query_seed_path': payload.get('query_seed_path', ''),
+        'district_scope': payload.get('district_scope', ''),
+        'query_count': str(len(queries)) if isinstance(queries, list) and queries else '',
+    }
+
+
 def build_connector_queue_rows(
     connector_rows: list[dict[str, str]],
     existing_lookup: dict[str, dict[str, str]],
@@ -861,6 +881,7 @@ def build_connector_queue_rows(
         task_id = f'EXT-{task_suffix}'
         existing = existing_lookup.get(task_id, {})
         target_date = existing.get('target_date') or utc_now().date().isoformat()
+        staged_meta = load_staged_contract_queue_metadata(manifest_row)
         rows.append(
             {
                 'task_id': task_id,
@@ -870,6 +891,13 @@ def build_connector_queue_rows(
                 'region': row.get('region_or_country', ''),
                 'source_id': source_id,
                 'artifact': manifest_row.get('expected_artifact', '') or 'plans/connector_readiness.csv',
+                'source_spec_path': staged_meta.get('source_spec_path', ''),
+                'request_method': staged_meta.get('request_method', ''),
+                'connector_status': staged_meta.get('connector_status', '') or row.get('status', ''),
+                'credential_state': staged_meta.get('credential_state', '') or row.get('credential_state', ''),
+                'query_seed_path': staged_meta.get('query_seed_path', '') or row.get('query_seed_file', ''),
+                'district_scope': staged_meta.get('district_scope', ''),
+                'query_count': staged_meta.get('query_count', ''),
                 'target_date': target_date,
                 'depends_on': '',
                 'next_action': row.get('next_action', ''),
@@ -1081,6 +1109,13 @@ def write_verification_sprint_pack(args: argparse.Namespace, records: list[dict[
             'region',
             'source_id',
             'artifact',
+            'source_spec_path',
+            'request_method',
+            'connector_status',
+            'credential_state',
+            'query_seed_path',
+            'district_scope',
+            'query_count',
             'target_date',
             'depends_on',
             'next_action',

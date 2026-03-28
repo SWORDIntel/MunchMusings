@@ -5,7 +5,7 @@ MunchMusings is a planning-first, public-source intelligence workspace for detec
 ## Current State
 
 - Source accounting is mostly closed: [plans/work_queue.csv](plans/work_queue.csv) has one active recency task, `ACC-RA-033`.
-- External execution is now first-class in the queue: `EXT-011` through `EXT-020` are the live staged-external operator tasks.
+- External execution is now first-class in the queue: `EXT-011` through `EXT-020` are the live staged-external operator tasks, and each row now carries the staged contract path plus inline execution metadata such as request method, connector state, and query context.
 - The collection manifest is stable at 27 completed runs and 7 honest `staged_external` runs in `artifacts/collection/collection-run-manifest.csv`.
 - Staged external rows are now explicit operator handoffs, not silent failures: start with the `EXT-*` row in `plans/work_queue.csv`, use its `next_action`, open the staged normalized contract it points to, then inspect `plans/connector_readiness.csv` and the staged raw spec if needed.
 - `seed-05` OCHA Gaza is fixed to the live `publications/situation-reports` endpoint.
@@ -146,8 +146,8 @@ python bootstrap.py --operating-cycle --resume-latest
 
 When `--collect-ready` or the operating-cycle wrapper leaves rows in `staged_external`, use this sequence:
 
-1. Check the matching `EXT-*` row in `plans/work_queue.csv` to see whether the external step is pending or blocked.
-2. Open the staged normalized contract referenced by the `EXT-*` row in `artifacts/collection/normalized/<source_id>.json`.
+1. Check the matching `EXT-*` row in `plans/work_queue.csv` to see whether the external step is pending or blocked, plus the staged `source_spec_path`, `request_method`, connector state, and query context.
+2. Open the staged normalized contract referenced by the `EXT-*` row in `artifacts/collection/normalized/<source_id>.json` when you need the full payload.
 3. Check `plans/connector_readiness.csv` to confirm the synced connector state, credential posture, and next action.
 4. Open the staged raw spec in `artifacts/collection/raw/<source_id>/run-*.*` when you need the exact request payload or capture surface.
 5. Follow the `execution_contract`, `connector_next_action`, and any linked `plans/source_specs/*.json` file.
