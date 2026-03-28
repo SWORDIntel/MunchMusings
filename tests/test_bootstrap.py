@@ -85,6 +85,62 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(result['action'], 'check')
         self.assertEqual(result['source_summary']['total_sources'], 34)
 
+    def test_render_tui_dashboard_shows_cycle_resume_context(self) -> None:
+        args = argparse.Namespace(
+            input=str(self.seed_path),
+            plans_dir='plans',
+            collection_dir='artifacts/collection',
+            briefing_dir='artifacts/briefings',
+            zone_name='Cairo/Giza pilot',
+            zone_country='Egypt',
+            max_runs=5,
+            verbose=False,
+        )
+        snapshot = {
+            'recent_counts': {'current': 22},
+            'verification_counts': {'verified': 2},
+            'collection_counts': {'completed': 27},
+            'latest_cycle': {
+                'cycle_id': '20260328T203000Z',
+                'status': 'failed',
+                'ended_at_utc': '2026-03-28T20:30:00Z',
+                'resume_mode': 'latest',
+                'next_step_index': 1,
+            },
+            'latest_brief_exists': False,
+            'latest_brief_path': 'artifacts/briefings/cairo-giza-pilot-2026-03-28/zone_brief.md',
+        }
+
+        rendered = bootstrap.render_tui_dashboard(args, snapshot)
+        self.assertIn('resume=latest', rendered)
+        self.assertIn('next_step=1', rendered)
+
+    def test_render_tui_preflight_shows_operating_cycle_resume_flags(self) -> None:
+        args = argparse.Namespace(
+            input=str(self.seed_path),
+            output_dir='artifacts/bootstrap',
+            docs_csv='docs/source-registry.csv',
+            pack_dir='artifacts/v0_1',
+            collection_dir='artifacts/collection',
+            plans_dir='plans',
+            briefing_dir='artifacts/briefings',
+            cycle_root='artifacts/custom-cycles',
+            zone_name='Cairo/Giza pilot',
+            zone_country='Egypt',
+            max_runs=9,
+            resume_cycle_dir='artifacts/custom-cycles/20260328T120000Z',
+            resume_latest=True,
+            dry_run_cycle=True,
+            cycle_dashboard=True,
+        )
+
+        rendered = bootstrap.render_tui_preflight('operating_cycle', args)
+        self.assertIn('Cycle root: artifacts/custom-cycles', rendered)
+        self.assertIn('Resume cycle dir: artifacts/custom-cycles/20260328T120000Z', rendered)
+        self.assertIn('Resume latest incomplete cycle: yes', rendered)
+        self.assertIn('Dry-run cycle: yes', rendered)
+        self.assertIn('Launch cycle dashboard: yes', rendered)
+
     def test_bootstrap_action_writes_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)

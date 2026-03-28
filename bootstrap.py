@@ -6686,9 +6686,15 @@ def render_tui_dashboard(args: argparse.Namespace, snapshot: dict[str, Any], las
     cycle = snapshot.get('latest_cycle', {})
     cycle_line = 'Latest cycle: none'
     if cycle:
+        resume_bits = []
+        if cycle.get('resume_mode'):
+            resume_bits.append(f"resume={cycle.get('resume_mode')}")
+        if cycle.get('next_step_index') not in {'', None}:
+            resume_bits.append(f"next_step={cycle.get('next_step_index')}")
+        resume_suffix = f" | {' | '.join(resume_bits)}" if resume_bits else ''
         cycle_line = (
             f"Latest cycle: {cycle.get('cycle_id', 'unknown')} | "
-            f"status={cycle.get('status', 'unknown')} | ended={cycle.get('ended_at_utc', 'unknown')}"
+            f"status={cycle.get('status', 'unknown')} | ended={cycle.get('ended_at_utc', 'unknown')}{resume_suffix}"
         )
 
     lines = [
@@ -6732,7 +6738,7 @@ def render_tui_dashboard(args: argparse.Namespace, snapshot: dict[str, Any], las
 
 def render_tui_preflight(action: str, args: argparse.Namespace) -> str:
     updates = {
-        'operating_cycle': [Path(args.collection_dir), Path(args.plans_dir), Path(args.briefing_dir), Path('artifacts/operating-cycles')],
+        'operating_cycle': [Path(args.collection_dir), Path(args.plans_dir), Path(args.briefing_dir), Path(getattr(args, 'cycle_root', 'artifacts/operating-cycles'))],
         'collect_ready': [Path(args.collection_dir)],
         'verification_sprint': [Path(args.plans_dir)],
         'brief_zone': [Path(args.briefing_dir)],
@@ -6744,6 +6750,16 @@ def render_tui_preflight(action: str, args: argparse.Namespace) -> str:
     lines = [f'Preflight for `{action}`:', f'- Seed input: {args.input}', f'- Zone: {args.zone_name} ({args.zone_country})']
     if action in {'collect_ready', 'operating_cycle'}:
         lines.append(f'- Max runs: {args.max_runs}')
+    if action == 'operating_cycle':
+        lines.append(f"- Cycle root: {getattr(args, 'cycle_root', 'artifacts/operating-cycles')}")
+        if getattr(args, 'resume_cycle_dir', ''):
+            lines.append(f"- Resume cycle dir: {getattr(args, 'resume_cycle_dir')}")
+        if getattr(args, 'resume_latest', False):
+            lines.append('- Resume latest incomplete cycle: yes')
+        if getattr(args, 'dry_run_cycle', False):
+            lines.append('- Dry-run cycle: yes')
+        if getattr(args, 'cycle_dashboard', False):
+            lines.append('- Launch cycle dashboard: yes')
     lines.append('- Will update:')
     lines.extend(f'  {path}' for path in updates.get(action, []))
     return '\n'.join(lines)
